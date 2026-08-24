@@ -4,8 +4,8 @@ import { BadgeCheck, Check, Clock3, Download, MapPin, MessageSquareText, Navigat
 import { colors, radii, font } from "../../lib/theme";
 import { Button } from "../../components/UI";
 import OpenStreetMap from "../../components/OpenStreetMap";
+import MapplsDrawer from "../../components/MapplsDrawer";
 import { useAuth } from "../../lib/auth";
-import { openInGoogleMaps } from "../../lib/maps";
 import { downloadInvoice, listRequestProposals, openUpiPayment, pickPaymentScreenshot, PUROHITH_UPI_ID, selectProposal, submitPaymentScreenshot } from "../../lib/payments";
 
 const DEMO_BIDS = [
@@ -37,6 +37,7 @@ export default function RequestProposals({ route }) {
   const [paymentAmount, setPaymentAmount] = useState("");
   const [payment, setPayment] = useState(null);
   const [paying, setPaying] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
   const desktop = width >= 850;
   const bestPrice = useMemo(() => bids.length ? Math.min(...bids.map((bid) => Number(bid.amount))) : 0, [bids]);
 
@@ -108,10 +109,11 @@ export default function RequestProposals({ route }) {
     } finally { setPaying(false); }
   };
 
-  return <ScrollView style={styles.root} contentContainerStyle={styles.content}>
+  return <>
+  <ScrollView style={styles.root} contentContainerStyle={styles.content}>
     <View style={styles.header}><Text style={styles.kicker}>PROPOSALS</Text><Text style={styles.title}>{request.pooja_name || "Your ceremony request"}</Text><Text style={styles.sub}>{request.ceremony_date || "Date pending"} · {request.ceremony_time || "Time pending"}</Text></View>
     <View style={[styles.summary, desktop && styles.summaryDesktop]}>
-      <View style={[styles.locationCard, desktop && styles.locationDesktop]}><View style={styles.mapWrap}><OpenStreetMap latitude={latitude} longitude={longitude} style={styles.map} /></View><View style={styles.addressRow}><MapPin size={16} color={colors.saffron} /><View style={{ flex: 1 }}><Text style={styles.addressTitle}>{request.address || "Service address"}</Text>{request.landmark ? <Text style={styles.addressMeta}>{request.landmark}</Text> : null}</View><Pressable accessibilityLabel="Open in maps" onPress={() => openInGoogleMaps(request)} style={styles.mapButton}><Navigation size={15} color={colors.white} /></Pressable></View></View>
+      <View style={[styles.locationCard, desktop && styles.locationDesktop]}><View style={styles.mapWrap}><OpenStreetMap latitude={latitude} longitude={longitude} title={request.pooja_name} address={request.address} style={styles.map} /></View><View style={styles.addressRow}><MapPin size={16} color={colors.saffron} /><View style={{ flex: 1 }}><Text style={styles.addressTitle}>{request.address || "Service address"}</Text>{request.landmark ? <Text style={styles.addressMeta}>{request.landmark}</Text> : null}</View><Pressable accessibilityLabel="Open Mappls drawer" onPress={() => setMapOpen(true)} style={styles.mapButton}><Navigation size={15} color={colors.white} /></Pressable></View></View>
       <View style={[styles.statusCard, desktop && styles.statusDesktop]}><View style={styles.statusIcon}><Clock3 size={19} color={colors.saffron} /></View><Text style={styles.statusLabel}>REQUEST STATUS</Text><Text style={styles.statusTitle}>{loading ? "Finding available purohits" : `${bids.length} proposals received`}</Text><View style={styles.timeline}><TimelineStep label="Request sent" done /><TimelineStep label="Purohits reviewing" done={bids.length > 0} /><TimelineStep label="Choose an offer" done={false} last /></View></View>
     </View>
 
@@ -132,7 +134,9 @@ export default function RequestProposals({ route }) {
         if (!downloaded && Platform.OS !== "web") Alert.alert("Invoice ready", `Invoice ${payment.invoice_number} is stored in the payment record.`);
       }} style={styles.downloadButton}><Download size={16} color={colors.white} /><Text style={styles.downloadText}>Download invoice</Text></Pressable> : null}<Text style={styles.aiNote}>AI confidence: {Math.round((payment.ai?.confidence || 0) * 100)}%. Admin final verification is required.</Text></View> : null}
     </View> : null}
-  </ScrollView>;
+  </ScrollView>
+  <MapplsDrawer visible={mapOpen} onClose={() => setMapOpen(false)} location={{ ...request, latitude, longitude, title: request.pooja_name }} />
+  </>;
 }
 
 function TimelineStep({ label, done, last }) {

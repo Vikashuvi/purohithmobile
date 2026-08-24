@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import * as Location from "expo-location";
 import { Clock3, LocateFixed, Navigation, ShieldCheck } from "lucide-react-native";
 import { colors, radii } from "../../lib/theme";
 import { Button } from "../../components/UI";
 import OpenStreetMap from "../../components/OpenStreetMap";
+import MapplsDrawer from "../../components/MapplsDrawer";
 import { usePreferences } from "../../lib/preferences";
 import api from "../../lib/api";
 
@@ -15,6 +16,7 @@ export default function TrackPriest({ route }) {
   const [trackingStatus, setTrackingStatus] = useState(booking?.tracking_status || "disabled");
   const [location, setLocation] = useState(null);
   const [updatedAt, setUpdatedAt] = useState("");
+  const [mapOpen, setMapOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -52,7 +54,7 @@ export default function TrackPriest({ route }) {
     <Text style={styles.title}>Track your purohit</Text>
     <Text style={styles.subtitle}>{booking?.pooja_name} · {booking?.priest_name}</Text>
 
-    <View style={styles.mapWrap}><OpenStreetMap latitude={latitude} longitude={longitude} /><View style={styles.mapBadge}><Navigation size={14} color={colors.ink} /><Text style={styles.mapBadgeText}>{location ? "Live priest location" : area.name}</Text></View></View>
+    <Pressable onPress={() => setMapOpen(true)} style={styles.mapWrap}><OpenStreetMap latitude={latitude} longitude={longitude} title="Live priest location" address={booking?.address || area.name} /><View style={styles.mapBadge}><Navigation size={14} color={colors.ink} /><Text style={styles.mapBadgeText}>{location ? "Live priest location" : area.name}</Text></View></Pressable>
 
     <View style={styles.statusCard}>
       <View style={styles.statusIcon}><LocateFixed size={20} color={trackingStatus === "active" ? colors.success : colors.muted2} /></View>
@@ -62,6 +64,7 @@ export default function TrackPriest({ route }) {
     {!consented ? <Button title="Allow location and continue" icon={LocateFixed} onPress={enable} /> : null}
     <View style={styles.privacy}><ShieldCheck size={17} color={colors.success} /><Text style={styles.privacyText}>Location is visible only for this confirmed booking and expires after the ceremony window.</Text></View>
     <View style={styles.help}><Clock3 size={17} color={colors.muted2} /><Text style={styles.helpText}>If the map has not updated recently, call the purohit from your booking details.</Text></View>
+    <MapplsDrawer visible={mapOpen} onClose={() => setMapOpen(false)} location={{ latitude, longitude, address: booking?.address || area.name, title: "Live priest location" }} />
   </ScrollView>;
 }
 

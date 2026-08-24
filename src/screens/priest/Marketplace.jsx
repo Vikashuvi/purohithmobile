@@ -3,7 +3,7 @@ import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInp
 import { BadgeIndianRupee, Check, Clock3, MapPin, Navigation, Send, Sparkles } from "lucide-react-native";
 import { colors } from "../../lib/theme";
 import { useAuth } from "../../lib/auth";
-import { openInGoogleMaps } from "../../lib/maps";
+import MapplsDrawer from "../../components/MapplsDrawer";
 import { listProviderRequests, sendProviderProposal } from "../../lib/payments";
 
 const DEMO_REQUESTS = [
@@ -19,6 +19,7 @@ export default function Marketplace() {
   const [samagri, setSamagri] = useState({});
   const [sending, setSending] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [mapTarget, setMapTarget] = useState(null);
 
   const load = useCallback(async () => {
     if (user?.demo) return setItems(DEMO_REQUESTS);
@@ -50,7 +51,8 @@ export default function Marketplace() {
     } finally { setSending(""); }
   };
 
-  return <ScrollView style={styles.root} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} tintColor={colors.saffron} />}>
+  return <>
+  <ScrollView style={styles.root} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} tintColor={colors.saffron} />}>
     <View style={styles.hero}>
       <View style={styles.heroIcon}><Sparkles size={19} color={colors.saffron} /></View>
       <View style={{ flex: 1 }}>
@@ -78,7 +80,7 @@ export default function Marketplace() {
             <Text style={styles.address}>{item.address}</Text>
             {item.landmark ? <Text style={styles.landmark}>{item.landmark}</Text> : null}
           </View>
-          <Pressable onPress={() => openInGoogleMaps(item)} style={styles.mapButton}><Navigation size={15} color={colors.ink} /><Text style={styles.mapButtonText}>Map</Text></Pressable>
+          <Pressable onPress={() => setMapTarget({ ...item, title: item.pooja_name })} style={styles.mapButton}><Navigation size={15} color={colors.ink} /><Text style={styles.mapButtonText}>Map</Text></Pressable>
         </View>
 
         <View style={styles.metaRow}><Text style={styles.budget}>{budget}</Text></View>
@@ -97,7 +99,9 @@ export default function Marketplace() {
         </>}
       </View>;
     }) : <View style={styles.empty}><Text style={styles.emptyTitle}>No matching requests yet</Text><Text style={styles.emptyText}>Keep your availability, pooja categories, and service areas current to receive relevant requests.</Text></View>}
-  </ScrollView>;
+  </ScrollView>
+  <MapplsDrawer visible={Boolean(mapTarget)} location={mapTarget} onClose={() => setMapTarget(null)} />
+  </>;
 }
 
 const styles = StyleSheet.create({

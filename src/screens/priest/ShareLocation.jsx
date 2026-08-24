@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Alert, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import * as Location from "expo-location";
 import { LocateFixed, Navigation, ShieldCheck, Square } from "lucide-react-native";
 import { colors, radii, spacing } from "../../lib/theme";
 import { Button } from "../../components/UI";
 import OpenStreetMap from "../../components/OpenStreetMap";
+import MapplsDrawer from "../../components/MapplsDrawer";
 import api from "../../lib/api";
 
 export default function ShareLocation({ route, navigation }) {
@@ -13,6 +14,7 @@ export default function ShareLocation({ route, navigation }) {
   const [active, setActive] = useState(false);
   const [position, setPosition] = useState(null);
   const [message, setMessage] = useState("Both you and the customer must consent before sharing begins.");
+  const [mapOpen, setMapOpen] = useState(false);
 
   useEffect(() => () => watcher.current?.remove(), []);
   const start = async () => {
@@ -42,10 +44,11 @@ export default function ShareLocation({ route, navigation }) {
   return <View style={styles.root}>
     <View style={styles.body}>
       <Text style={styles.eyebrow}>TRIP TO BOOKING</Text><Text style={styles.title}>Share arrival location</Text><Text style={styles.subtitle}>{booking?.customer_name} · {booking?.pooja_name}</Text>
-      <View style={styles.map}><OpenStreetMap latitude={latitude} longitude={longitude} /></View>
+      <Pressable onPress={() => setMapOpen(true)} style={styles.map}><OpenStreetMap latitude={latitude} longitude={longitude} title="Your live location" address={booking?.address} /></Pressable>
       <View style={styles.status}><Navigation size={19} color={active ? colors.success : colors.muted2} /><View style={{ flex: 1 }}><Text style={styles.statusTitle}>{active ? "Sharing live location" : "Not sharing yet"}</Text><Text style={styles.statusText}>{message}</Text></View></View>
       <View style={styles.privacy}><ShieldCheck size={17} color={colors.success} /><Text style={styles.privacyText}>Sharing is limited to this customer and stops when you end it or complete the booking.</Text></View>
     </View>
+    <MapplsDrawer visible={mapOpen} onClose={() => setMapOpen(false)} location={{ latitude, longitude, address: booking?.address, title: "Your live location" }} />
     <View style={styles.footer}>{active ? <Button title="Stop sharing" icon={Square} variant="outline" onPress={stop} /> : <Button title="Start sharing" icon={LocateFixed} onPress={start} />}</View>
   </View>;
 }

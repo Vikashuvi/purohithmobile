@@ -5,6 +5,7 @@ import { ChevronRight, LocateFixed, MapPin, Sparkles, WalletCards } from "lucide
 import { colors, radii, spacing } from "../../lib/theme";
 import { Button } from "../../components/UI";
 import OpenStreetMap from "../../components/OpenStreetMap";
+import MapplsDrawer from "../../components/MapplsDrawer";
 import { useAuth } from "../../lib/auth";
 import { createCeremonyRequest } from "../../lib/payments";
 
@@ -44,6 +45,7 @@ export default function RequestPooja({ navigation, route }) {
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [locating, setLocating] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
   const ceremony = useMemo(() => CEREMONIES.find(([slug]) => slug === poojaSlug), [poojaSlug]);
   const latitude = coords?.latitude || 12.9784;
   const longitude = coords?.longitude || 77.6408;
@@ -105,7 +107,7 @@ export default function RequestPooja({ navigation, route }) {
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateList}>{dates.map((item) => <Pressable key={iso(item)} onPress={() => setDate(iso(item))} style={[styles.date, date === iso(item) && styles.dateActive]}><Text style={[styles.dateDow, date === iso(item) && styles.dateTextActive]}>{item.toLocaleDateString("en-IN", { weekday: "short" })}</Text><Text style={[styles.dateNum, date === iso(item) && styles.dateTextActive]}>{item.getDate()}</Text></Pressable>)}</ScrollView>
       <View style={styles.timeRow}>{["06:00", "09:00", "16:00", "19:00"].map((slot) => <Pressable key={slot} onPress={() => setTime(slot)} style={[styles.time, time === slot && styles.timeActive]}><Text style={[styles.timeText, time === slot && { color: colors.white }]}>{slot}</Text></Pressable>)}</View>
       <Text style={styles.label}>Where</Text>
-      <View style={styles.mapWrap}><OpenStreetMap latitude={latitude} longitude={longitude} style={styles.map} /><View style={styles.mapBadge}><MapPin size={14} color={colors.ink} /><Text style={styles.mapBadgeText}>{coords ? "Exact ceremony pin" : "Bengaluru preview"}</Text></View></View>
+      <Pressable onPress={() => setMapOpen(true)} style={styles.mapWrap}><OpenStreetMap latitude={latitude} longitude={longitude} title={ceremony?.[1]} address={address || "Bengaluru preview"} style={styles.map} /><View style={styles.mapBadge}><MapPin size={14} color={colors.ink} /><Text style={styles.mapBadgeText}>{coords ? "Exact ceremony pin" : "Bengaluru preview"}</Text></View></Pressable>
       <Pressable onPress={useCurrentLocation} disabled={locating} style={({ pressed }) => [styles.locationButton, pressed && styles.locationPressed]}>
         <LocateFixed size={18} color={colors.ink} /><Text style={styles.locationButtonText}>{locating ? "Reading location..." : "Use current location"}</Text>
       </Pressable>
@@ -129,6 +131,7 @@ export default function RequestPooja({ navigation, route }) {
       </View>
       </View>
     </ScrollView>
+    <MapplsDrawer visible={mapOpen} onClose={() => setMapOpen(false)} location={{ latitude, longitude, address: address || "Bengaluru preview", landmark, title: ceremony?.[1] }} />
     <View style={styles.footer}><Button testID="request-proposals-submit" title={busy ? "Processing..." : "Request proposals"} onPress={submit} disabled={busy} icon={ChevronRight} /></View>
   </View>;
 }
