@@ -1,0 +1,81 @@
+{
+  "expo": {
+    "name": "Purohith Connect",
+    "slug": "purohith-connect",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "purohith",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#FEF7EC"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.purohithconnect.app",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Use Face ID to unlock your Purohith Connect session.",
+        "NSPhotoLibraryUsageDescription": "Attach ID / certificate photos to your priest profile.",
+        "NSCameraUsageDescription": "Take a photo of your ID / certificate for priest verification.",
+        "NSLocationWhenInUseUsageDescription": "Use your location to match nearby purohits and, with explicit consent, show live arrival progress for an active booking."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#FEF7EC"
+      },
+      "package": "com.purohithconnect.app",
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "color": "#EA580C"
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Use Face ID to sign back into Purohith Connect."
+        }
+      ],
+      [
+        "expo-secure-store"
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app needs access to your photos to attach ID/certificate.",
+          "cameraPermission": "The app needs camera access for verification documents."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow Purohith Connect to use your location for nearby matching and consent-based booking tracking."
+        }
+      ],
+      "expo-font"
+    ],
+    "extra": {
+      "apiUrl": "https://pooja-marketplace-3.preview.emergentagent.com",
+      "supabaseUrl": "https://fvvmfrbfqwdypkagtdce.supabase.co",
+      "supabaseAnonKey": "",
+      "eas": {
+        "projectId": "PLACEHOLDER-EAS-PROJECT-ID"
+      }
+    }
+  }
+}

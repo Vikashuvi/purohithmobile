@@ -1,0 +1,129 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
+
+  try {
+    const body = await req.json().catch(() => ({}));
+    const supabase = createClient(Deno.env.get("SUPABASE_URL")!, getSupabaseSecretKey(), {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    if (body.kind === "poojas") {
+      const { data, error } = await supabase.from("poojas")
+        .select("id,slug,name,description,duration_minutes,base_price_inr,image_url,is_active")
+        .eq("is_active", true)
+        .order("base_price_inr", { ascending: true });
+      if (error) throw error;
+      return json({ poojas: data || [] });
+    }
+
+    if (body.kind === "profile") {
+      const { data, error } = await supabase.from("priest_profiles")
+        .select("id,user_id,display_name,bio,years_experience,languages,service_areas,pooja_slugs,photo_url,verification_status,rating,review_count,tradition,availability_notes,starting_price_inr,max_price_inr,primary_service_area")
+        .eq("id", body.priest_id)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return json({ error: "Profile not found" }, 404);
+      return json({ profile: mapPriest(data) });
+    }
+
+    const poojaSlug = clean(body.pooja_slug);
+    const area = clean(body.area);
+    const language = clean(body.language);
+    const q = clean(body.query).toLowerCase();
+    const minPrice = Number(body.min_price_inr || 0);
+    const maxPrice = Number(body.max_price_inr || 0);
+
+    let query = supabase.from("priest_profiles")
+      .select("id,user_id,display_name,bio,years_experience,languages,service_areas,pooja_slugs,photo_url,verification_status,rating,review_count,tradition,availability_notes,starting_price_inr,max_price_inr,primary_service_area")
+      .eq("verification_status", "verified")
+      .order("rating", { ascending: false })
+      .limit(80);
+
+    if (poojaSlug) query = query.contains("pooja_slugs", [poojaSlug]);
+    if (minPrice > 0) query = query.gte("max_price_inr", minPrice);
+    if (maxPrice > 0) query = query.lte("starting_price_inr", maxPrice);
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const filtered = (data || []).filter((profile) => {
+      const languages = profile.languages || [];
+      const areas = profile.service_areas || [];
+      const searchBlob = [
+        profile.display_name,
+        profile.bio,
+        profile.tradition,
+        profile.primary_service_area,
+        ...languages,
+        ...areas,
+        ...(profile.pooja_slugs || []),
+      ].join(" ").toLowerCase();
+      const matchesLanguage = !language || language === "All" || languages.includes(language);
+      const matchesArea = !area || area === "All" || areas.some((item: string) => item.toLowerCase().includes(area.toLowerCase())) || profile.primary_service_area?.toLowerCase().includes(area.toLowerCase());
+      const matchesSearch = !q || searchBlob.includes(q);
+      return matchesLanguage && matchesArea && matchesSearch;
+    });
+
+    return json({ priests: filtered.map(mapPriest) });
+  } catch (error) {
+    return json({ error: String(error?.message || error) }, 500);
+  }
+});
+
+function json(payload: unknown, status = 200) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+function clean(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function mapPriest(profile: any) {
+  return {
+    id: profile.id,
+    user_id: profile.user_id,
+    name: profile.display_name,
+    display_name: profile.display_name,
+    bio: profile.bio,
+    experience: profile.years_experience,
+    experience_years: profile.years_experience,
+    languages: profile.languages || [],
+    areas: profile.service_areas || [],
+    service_areas: profile.service_areas || [],
+    pooja_specialties: profile.pooja_slugs || [],
+    pooja_slugs: profile.pooja_slugs || [],
+    photo_url: profile.photo_url,
+    verified: profile.verification_status === "verified",
+    rating: Number(profile.rating || 0),
+    reviews_count: profile.review_count || 0,
+    rating_count: profile.review_count || 0,
+    tradition: profile.tradition,
+    availability_notes: profile.availability_notes,
+    starting_price_inr: profile.starting_price_inr,
+    max_price_inr: profile.max_price_inr,
+    primary_service_area: profile.primary_service_area,
+  };
+}
+
+function getSupabaseSecretKey() {
+  const secretKeys = Deno.env.get("SUPABASE_SECRET_KEYS");
+  if (secretKeys) {
+    const parsed = JSON.parse(secretKeys);
+    if (parsed.default) return parsed.default;
+  }
+  const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (serviceRole) return serviceRole;
+  throw new Error("Supabase secret key is not configured for this function.");
+}
