@@ -79,11 +79,8 @@
     "extra": {
       "apiUrl": "https://pooja-marketplace-3.preview.emergentagent.com",
       "supabaseUrl": "https://fvvmfrbfqwdypkagtdce.supabase.co",
-      "supabaseAnonKey": "",
-      "mapplsAccessToken": "",
-      "eas": {
-        "projectId": "PLACEHOLDER-EAS-PROJECT-ID"
-      }
+      "supabaseAnonKey": "sb_publishable_sEbAdNoOCjP5Vs3DV9Y6SA_DDkZMGfy",
+      "mapplsAccessToken": "245e028d27385d25b6fedb57230896ee"
     }
   }
 }

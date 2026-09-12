@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
-import { Mic, MicOff, Phone, PhoneOff, ShieldCheck, Video, VideoOff } from "lucide-react-native";
+import { Mic, MicOff, Phone, PhoneOff, ShieldCheck, Video, VideoOff, ArrowLeft } from "lucide-react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { colors, spacing } from "../lib/theme";
 import { Button } from "../components/UI";
@@ -8,6 +9,7 @@ import api, { API_URL, tokens } from "../lib/api";
 import { useAuth } from "../lib/auth";
 
 export default function CallRoom({ route }) {
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const { user } = useAuth();
   const routeBooking = route.params?.booking;
@@ -119,8 +121,15 @@ export default function CallRoom({ route }) {
   const toggleCamera = () => { const next = !camera; stream.current?.getVideoTracks?.().forEach((track) => { track.enabled = next; }); setCamera(next); };
   const VideoView = ({ videoRef, muted: isMuted, remote }) => Platform.OS === "web" ? React.createElement("video", { ref: videoRef, autoPlay: true, playsInline: true, muted: isMuted, style: remote ? styles.remoteVideo : styles.localVideo }) : <View style={styles.nativeVideo}><Video size={34} color={colors.muted2} /><Text style={styles.nativeVideoText}>Native WebRTC call</Text></View>;
 
-  return <View style={styles.root}>
-    <View style={styles.header}><Text style={styles.eyebrow}>PRIVATE BOOKING CALL</Text><Text style={styles.title}>{booking?.priest_name || booking?.customer_name || "Purohit Connect"}</Text><Text style={styles.subtitle}>{booking?.pooja_name || "Conversation"}</Text></View>
+  return <View style={[styles.root, { paddingTop: Math.max(insets.top, 12) + 8, paddingBottom: Math.max(insets.bottom, 16) }]}>
+    <View style={styles.header}>
+      <Pressable accessibilityLabel="Back to booking" onPress={() => navigation.goBack()} hitSlop={12} style={styles.backBtn}><ArrowLeft size={20} color={colors.white} /></Pressable>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.eyebrow}>PRIVATE BOOKING CALL</Text>
+        <Text style={styles.title}>{booking?.priest_name || booking?.customer_name || "Purohit Connect"}</Text>
+        <Text style={styles.subtitle}>{booking?.pooja_name || "Conversation"}</Text>
+      </View>
+    </View>
     <View style={styles.stage}><VideoView videoRef={remoteVideo} remote /><VideoView videoRef={localVideo} muted />{started && !mediaReady ? <View style={styles.previewEmpty}><Video size={26} color={colors.muted2} /><Text style={styles.previewTitle}>Waiting for camera preview</Text><Text style={styles.previewText}>Allow camera and microphone access to show your video.</Text></View> : null}<View style={styles.status}><ShieldCheck size={14} color={colors.success} /><Text style={styles.statusText}>{connected ? "Connected securely" : status}</Text></View></View>
     <View style={styles.controls}><Control icon={muted ? MicOff : Mic} label={muted ? "Unmute" : "Mute"} onPress={toggleMic} /><Control icon={camera ? Video : VideoOff} label={camera ? "Camera" : "Video"} onPress={toggleCamera} /><Pressable accessibilityLabel="End call" onPress={() => { end(); navigation.goBack(); }} style={styles.end}><PhoneOff size={20} color={colors.white} /></Pressable></View>
     {!started ? <Button title="Start video call" icon={Phone} onPress={connect} style={styles.start} /> : null}
@@ -130,5 +139,28 @@ export default function CallRoom({ route }) {
 
 function Control({ icon: Icon, label, onPress }) { return <View style={styles.controlWrap}><Pressable accessibilityLabel={label} onPress={onPress} style={styles.control}><Icon size={19} color={colors.ink} /></Pressable><Text style={styles.controlLabel}>{label}</Text></View>; }
 
-const styles = StyleSheet.create({ root: { flex: 1, backgroundColor: "#0E0E0E", padding: spacing.lg }, header: { paddingTop: spacing.lg }, eyebrow: { color: colors.saffron, fontSize: 10, fontWeight: "700", letterSpacing: .6 }, title: { color: colors.white, fontSize: 28, lineHeight: 34, fontWeight: "700", marginTop: 6 }, subtitle: { color: "#AFAFAF", fontSize: 12, marginTop: 4 }, stage: { flex: 1, minHeight: 360, marginVertical: spacing.lg, borderRadius: 20, overflow: "hidden", backgroundColor: "#202020", position: "relative" }, remoteVideo: { width: "100%", height: "100%", objectFit: "cover", backgroundColor: "#202020" }, localVideo: { position: "absolute", right: 14, bottom: 14, width: 132, height: 174, objectFit: "cover", backgroundColor: "#151515", borderRadius: 14, borderWidth: 2, borderColor: colors.white }, nativeVideo: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10 }, nativeVideoText: { color: colors.muted2, fontSize: 12 }, previewEmpty: { position: "absolute", alignSelf: "center", top: "42%", alignItems: "center", maxWidth: 230 }, previewTitle: { color: colors.white, fontSize: 14, fontWeight: "700", marginTop: 10 }, previewText: { color: "#A8A8A3", fontSize: 11, textAlign: "center", lineHeight: 16, marginTop: 5 }, status: { position: "absolute", left: 14, top: 14, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 11, paddingVertical: 8, borderRadius: 16, backgroundColor: "rgba(17,17,17,.82)" }, statusText: { color: colors.white, fontSize: 10 }, controls: { flexDirection: "row", alignItems: "flex-start", justifyContent: "center", gap: 26 }, controlWrap: { alignItems: "center", gap: 6 }, control: { width: 52, height: 52, borderRadius: 26, backgroundColor: colors.white, alignItems: "center", justifyContent: "center" }, controlLabel: { color: "#C9C9C5", fontSize: 10 }, end: { width: 56, height: 52, borderRadius: 26, backgroundColor: colors.danger, alignItems: "center", justifyContent: "center" }, start: { marginTop: spacing.xl, backgroundColor: colors.saffron }, note: { color: "#8F8F8A", fontSize: 10, textAlign: "center", lineHeight: 15, marginTop: spacing.lg, marginBottom: spacing.sm },
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: "#0E0E0E", paddingHorizontal: spacing.lg },
+  header: { flexDirection: "row", alignItems: "flex-start", gap: 12, marginBottom: spacing.sm },
+  backBtn: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, borderColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center", marginTop: 4 },
+  eyebrow: { color: colors.saffron, fontSize: 10, fontWeight: "700", letterSpacing: .6 },
+  title: { color: colors.white, fontSize: 24, lineHeight: 30, fontWeight: "700", marginTop: 2 },
+  subtitle: { color: "#AFAFAF", fontSize: 12, marginTop: 2 },
+  stage: { flex: 1, minHeight: 320, marginVertical: spacing.md, borderRadius: 20, overflow: "hidden", backgroundColor: "#202020", position: "relative" },
+  remoteVideo: { width: "100%", height: "100%", objectFit: "cover", backgroundColor: "#202020" },
+  localVideo: { position: "absolute", right: 14, bottom: 14, width: 132, height: 174, objectFit: "cover", backgroundColor: "#151515", borderRadius: 14, borderWidth: 2, borderColor: colors.white },
+  nativeVideo: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10 },
+  nativeVideoText: { color: colors.muted2, fontSize: 12 },
+  previewEmpty: { position: "absolute", alignSelf: "center", top: "42%", alignItems: "center", maxWidth: 230 },
+  previewTitle: { color: colors.white, fontSize: 14, fontWeight: "700", marginTop: 10 },
+  previewText: { color: "#A8A8A3", fontSize: 11, textAlign: "center", lineHeight: 16, marginTop: 5 },
+  status: { position: "absolute", left: 14, top: 14, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 11, paddingVertical: 8, borderRadius: 16, backgroundColor: "rgba(17,17,17,.82)" },
+  statusText: { color: colors.white, fontSize: 10 },
+  controls: { flexDirection: "row", alignItems: "flex-start", justifyContent: "center", gap: 26 },
+  controlWrap: { alignItems: "center", gap: 6 },
+  control: { width: 52, height: 52, borderRadius: 26, backgroundColor: colors.white, alignItems: "center", justifyContent: "center" },
+  controlLabel: { color: "#C9C9C5", fontSize: 10 },
+  end: { width: 56, height: 52, borderRadius: 26, backgroundColor: colors.danger, alignItems: "center", justifyContent: "center" },
+  start: { marginTop: spacing.lg, backgroundColor: colors.saffron },
+  note: { color: "#8F8F8A", fontSize: 10, textAlign: "center", lineHeight: 15, marginTop: spacing.md, marginBottom: spacing.sm },
 });

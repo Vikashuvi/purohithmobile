@@ -305,14 +305,17 @@ function LoginSplash({ role, onDone }) {
 function AuthAppFrame() {
   const { user, role } = useAuth();
   const [showSplash, setShowSplash] = useState(false);
-  const hadUser = useRef(Boolean(user));
+  const splashShownForUser = useRef(null);
 
   useEffect(() => {
-    const hasUser = Boolean(user);
-    if (hasUser && !hadUser.current) {
-      setShowSplash(true);
+    if (user?.id) {
+      if (splashShownForUser.current !== user.id) {
+        splashShownForUser.current = user.id;
+        setShowSplash(true);
+      }
+    } else {
+      splashShownForUser.current = null;
     }
-    hadUser.current = hasUser;
   }, [user]);
 
   return (
