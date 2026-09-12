@@ -1,22 +1,33 @@
 import React, { useState } from "react";
 import { Modal, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Check, ChevronDown, MapPin, X } from "lucide-react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { colors, radii, spacing } from "../lib/theme";
 import { usePreferences } from "../lib/preferences";
 import BrandLogo from "./BrandLogo";
 
 export default function AppTopBar({ showLocation = true }) {
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const { language, area, setArea, areas } = usePreferences();
   const [open, setOpen] = useState(false);
+
+  const topInset = Math.max(insets.top, 12);
+
   return <>
-    <View style={styles.bar}>
-      {showLocation ? <Pressable style={styles.location} onPress={() => setOpen(true)}>
-        <View style={styles.pinTile}><MapPin size={15} color={colors.saffron} /></View><View style={styles.locationCopy}><Text style={styles.label}>SERVICE LOCATION</Text><Text numberOfLines={1} style={styles.value}>{area.name}</Text></View><ChevronDown size={15} color={colors.muted2} />
-      </Pressable> : <View style={{ flex: 1 }} />}
-      <BrandLogo size={34} compact style={styles.brand} />
-      <Pressable accessibilityLabel="Language settings" onPress={() => navigation.navigate("Settings", { section: "language" })} style={styles.language}><Text style={styles.languageText}>{language === "kn" ? "KN" : "EN"}</Text></Pressable>
+    <View style={[styles.wrapper, { paddingTop: topInset }]}>
+      <View style={styles.bar}>
+        {showLocation ? <Pressable style={styles.location} onPress={() => setOpen(true)}>
+          <View style={styles.pinTile}><MapPin size={14} color={colors.saffron} /></View>
+          <View style={styles.locationCopy}><Text style={styles.label}>SERVICE LOCATION</Text><Text numberOfLines={1} style={styles.value}>{area.name}</Text></View>
+          <ChevronDown size={14} color={colors.muted2} />
+        </Pressable> : <View style={{ flex: 1 }} />}
+        <View style={styles.brandWrap}>
+          <BrandLogo size={30} showText={false} />
+        </View>
+        <Pressable accessibilityLabel="Language settings" onPress={() => navigation.navigate("Settings", { section: "language" })} style={styles.language}><Text style={styles.languageText}>{language === "kn" ? "KN" : "EN"}</Text></Pressable>
+      </View>
     </View>
     <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
       <View style={styles.overlay}><SafeAreaView style={styles.sheet}>
@@ -30,14 +41,15 @@ export default function AppTopBar({ showLocation = true }) {
 }
 
 const styles = StyleSheet.create({
-  bar: { width: "100%", maxWidth: 1180, minHeight: 66, alignSelf: "center", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, backgroundColor: colors.white, borderBottomWidth: 1, borderColor: colors.warmBorder },
-  brand: { position: "absolute", left: "50%", marginLeft: -76, width: 152, alignItems: "center", justifyContent: "center" },
-  location: { width: "31%", maxWidth: 210, minWidth: 104, flexDirection: "row", alignItems: "center", gap: 7 },
+  wrapper: { width: "100%", backgroundColor: colors.white, borderBottomWidth: 1, borderColor: colors.warmBorder },
+  bar: { width: "100%", maxWidth: 1180, height: 54, alignSelf: "center", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg },
+  brandWrap: { alignItems: "center", justifyContent: "center" },
+  location: { flexDirection: "row", alignItems: "center", gap: 7, maxWidth: 160 },
   locationCopy: { flex: 1, minWidth: 0 },
-  pinTile: { width: 34, height: 34, borderRadius: 10, backgroundColor: "#FFF2EC", alignItems: "center", justifyContent: "center" },
+  pinTile: { width: 32, height: 32, borderRadius: 8, backgroundColor: "#FFF2EC", alignItems: "center", justifyContent: "center" },
   label: { fontSize: 8, color: colors.muted2, fontWeight: "600", letterSpacing: .5 },
   value: { fontSize: 13, color: colors.ink, fontWeight: "700", marginTop: 1 },
-  language: { width: 38, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", backgroundColor: colors.brandTint, borderWidth: 1, borderColor: "#E8C2CA" },
+  language: { width: 36, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", backgroundColor: colors.brandTint, borderWidth: 1, borderColor: "#E8C2CA" },
   languageText: { color: colors.brandBrown, fontSize: 10, fontWeight: "800" },
   overlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,.36)" },
   sheet: { maxHeight: "78%", backgroundColor: colors.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: spacing.lg },
