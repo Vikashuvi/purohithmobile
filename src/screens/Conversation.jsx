@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { ArrowLeft, Phone, Send, ShieldCheck } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -6,6 +6,7 @@ import { useNavigation } from "@react-navigation/native";
 import { colors, font, spacing } from "../lib/theme";
 import { useAuth } from "../lib/auth";
 import api from "../lib/api";
+import { promptCallAction } from "../lib/calls";
 
 const demoMessages = (isCustomer) => [{
   id: "welcome",
@@ -25,7 +26,6 @@ export default function Conversation({ route }) {
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
-  const demoChannel = useRef(null);
   const isCustomer = user?.role === "customer";
   const otherName = isCustomer ? booking?.priest_name : booking?.customer_name;
 
@@ -82,7 +82,22 @@ export default function Conversation({ route }) {
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 12) + 8 }]}>
         <Pressable accessibilityLabel="Back to booking" onPress={() => navigation.goBack()} hitSlop={12} style={styles.iconBtn}><ArrowLeft size={20} color={colors.ink} /></Pressable>
         <View style={styles.identity}><View style={styles.avatar}><Text style={styles.avatarText}>{title.slice(0, 1)}</Text></View><View><Text style={styles.title}>{title}</Text><Text style={styles.subtitle}>{booking?.pooja_name || "Booking conversation"}</Text></View></View>
-        <Pressable accessibilityLabel="Start audio call" onPress={() => navigation.navigate("CallRoom", { bookingId })} style={styles.callBtn}><Phone size={18} color={colors.ink} /></Pressable>
+        <Pressable
+          accessibilityLabel="Start call"
+          onPress={() => {
+            const targetPhone = isCustomer
+              ? (booking?.priest_phone || booking?.priest?.phone || (booking?.demo || bookingId === "demo-confirmed" ? "9876543210" : ""))
+              : (booking?.customer_phone || booking?.customer?.phone || (booking?.demo || bookingId === "demo-confirmed" ? "9000000001" : ""));
+            promptCallAction({
+              phoneNumber: targetPhone,
+              name: title,
+              onInAppCall: () => navigation.navigate("CallRoom", { bookingId, booking }),
+            });
+          }}
+          style={styles.callBtn}
+        >
+          <Phone size={18} color={colors.ink} />
+        </Pressable>
       </View>
       <View style={styles.safety}><ShieldCheck size={14} color={colors.success} /><Text style={styles.safetyText}>Private conversation for this booking</Text></View>
       <FlatList

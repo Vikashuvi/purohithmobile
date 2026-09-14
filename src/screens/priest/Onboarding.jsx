@@ -13,7 +13,6 @@ import BANGALORE_AREAS from "../../data/bangalore-areas.json";
 
 const LANGUAGES = ["English", "Kannada", "Sanskrit", "Hindi", "Tamil", "Telugu", "Marathi", "Malayalam"];
 const AREAS = BANGALORE_AREAS.map((area) => area.name);
-const REQUIRED_FIELD_ERROR = "This field isn't properly filled.";
 const POOJAS = [
   ["gauri-ganesha-vratha", "Gauri and Ganesha Vrata"],
   ["rudrabhishek", "Rudra Abhishek"],

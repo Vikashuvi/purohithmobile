@@ -1,8 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, FlatList, Image, ImageBackground, Pressable, RefreshControl, ScrollView, TextInput, useWindowDimensions } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { Search, SlidersHorizontal, ArrowRight, Clock3, ShieldCheck, UserRoundPlus, UsersRound, FileText } from "lucide-react-native";
-import { colors, radii, spacing, font } from "../../lib/theme";
+import { colors, radii, font } from "../../lib/theme";
 import api, { API_URL } from "../../lib/api";
 import { spiritualTap } from "../../lib/spiritualSounds";
 import { fetchMarketplacePoojas } from "../../lib/marketplace";

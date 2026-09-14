@@ -8,6 +8,7 @@ import api from "../../lib/api";
 import { downloadInvoice, listBookings, listPaymentReports } from "../../lib/payments";
 import { useI18n } from "../../lib/i18n";
 import { useAuth } from "../../lib/auth";
+import { promptCallAction } from "../../lib/calls";
 
 const TIME_SLOTS = ["06:00", "07:30", "09:00", "10:30", "16:00", "17:30", "19:00"];
 const DISPUTE_CATEGORIES = [
@@ -17,7 +18,7 @@ const DISPUTE_CATEGORIES = [
   { id: "payment_issue", en: "Payment issue", kn: "ಪಾವತಿ ಸಮಸ್ಯೆ" },
   { id: "other", en: "Other", kn: "ಇನ್ನಿತರ" },
 ];
-const DEMO_CUSTOMER_BOOKING = { id: "demo-confirmed", demo: true, status: "confirmed", payment_status: "paid", pooja_name: "Satyanarayan Pooja", priest_name: "Demo Purohit", booking_date: "2026-08-10", booking_time: "07:30", address: "Jayanagar, Bengaluru", total_amount: 3100, customer_name: "Demo Customer", customer_phone: "9000000001" };
+const DEMO_CUSTOMER_BOOKING = { id: "demo-confirmed", demo: true, status: "confirmed", payment_status: "paid", pooja_name: "Satyanarayan Pooja", priest_name: "Demo Purohit", priest_phone: "9876543210", booking_date: "2026-08-10", booking_time: "07:30", address: "Jayanagar, Bengaluru", total_amount: 3100, customer_name: "Demo Customer", customer_phone: "9000000001" };
 
 function upcomingDates(days = 14) {
   const out = [];
@@ -143,7 +144,18 @@ export default function MyBookings({ navigation }) {
               {b.status === "confirmed" ? <View style={styles.primaryActions}>
                 <Pressable testID={`track-btn-${b.id}`} onPress={() => navigation.navigate("TrackPriest", { booking: b })} style={styles.trackAction}><LocateFixed size={17} color={colors.white} /><Text style={styles.trackActionText}>Track purohit</Text><ChevronRight size={16} color={colors.white} /></Pressable>
                 <Pressable testID={`message-btn-${b.id}`} accessibilityLabel="Message purohit" onPress={() => navigation.navigate("Conversation", { bookingId: b.id })} style={styles.roundAction}><MessageSquareText size={17} color={colors.ink} /></Pressable>
-                <Pressable testID={`call-btn-${b.id}`} accessibilityLabel="Call purohit" onPress={() => navigation.navigate("CallRoom", { bookingId: b.id })} style={styles.roundAction}><Phone size={17} color={colors.ink} /></Pressable>
+                <Pressable
+                  testID={`call-btn-${b.id}`}
+                  accessibilityLabel="Call purohit"
+                  onPress={() => promptCallAction({
+                    phoneNumber: b.priest_phone || b.priest?.phone || (b.demo ? "9876543210" : ""),
+                    name: b.priest_name || "Purohit",
+                    onInAppCall: () => navigation.navigate("CallRoom", { bookingId: b.id, booking: b }),
+                  })}
+                  style={styles.roundAction}
+                >
+                  <Phone size={17} color={colors.ink} />
+                </Pressable>
               </View> : null}
               <View style={styles.actions}>
                 {b.status === "completed" && <ActionBtn label={t.reviewCta} testID={`review-btn-${b.id}`} onPress={() => setReviewTarget(b)} />}
