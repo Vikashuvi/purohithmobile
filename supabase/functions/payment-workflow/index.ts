@@ -307,7 +307,11 @@ async function createCashfreeOrder(supabase: any, body: any, identity: any) {
   const returnUrl = clean(Deno.env.get("CASHFREE_RETURN_URL")) || "https://purohit-marketplace-project.vercel.app/home?cashfree_order_id={order_id}";
   const notifyUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/cashfree-webhook`;
   const { data: customer } = await supabase.from("app_users").select("full_name,email,phone").eq("id", identity.id).maybeSingle();
-  if (!customer?.phone) return json({ error: "Add a verified phone number to your profile before payment" }, 409);
+  let customerPhone = customer?.phone || clean(body.customer_phone);
+  if (!customerPhone) return json({ error: "Add a verified phone number to your profile before payment" }, 409);
+  if (!customer?.phone && customerPhone) {
+    await supabase.from("app_users").update({ phone: customerPhone, updated_at: new Date().toISOString() }).eq("id", identity.id);
+  }
 
   const payload = {
     order_id: merchantOrderId,
@@ -315,9 +319,9 @@ async function createCashfreeOrder(supabase: any, body: any, identity: any) {
     order_currency: "INR",
     customer_details: {
       customer_id: identity.id,
-      customer_name: customer.full_name || "Purohith Connect customer",
-      customer_email: customer.email || identity.email,
-      customer_phone: customer.phone,
+      customer_name: customer?.full_name || "Purohith Connect customer",
+      customer_email: customer?.email || identity.email,
+      customer_phone: customerPhone,
     },
     order_meta: { return_url: returnUrl, notify_url: notifyUrl },
     order_note: `Purohith Connect booking ${bookingId}`,

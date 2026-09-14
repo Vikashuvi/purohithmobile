@@ -13,7 +13,7 @@ const DEMO_BIDS = [
   { id: "demo-bid-ramesh", priest_name: "Pandit Ramesh Shukla", amount: 3200, message: "Available at your requested time. Happy to discuss family traditions first.", includes_samagri: false },
 ];
 
-export default function RequestProposals({ route }) {
+export default function RequestProposals({ route, navigation }) {
   const { width } = useWindowDimensions();
   const { user } = useAuth();
   const params = route.params || {};
@@ -69,6 +69,16 @@ export default function RequestProposals({ route }) {
     const amount = Number(paymentAmount);
     if (!selectedBid) return Alert.alert("Choose a proposal first", "Select the purohit you want before making payment.");
     if (!amount || amount < 1) return Alert.alert("Invalid proposal", "The selected proposal does not have a payable amount.");
+    if (!user?.phone) {
+      return Alert.alert(
+        "Phone number required",
+        "Add a verified mobile number to your profile before completing Cashfree payment.",
+        [
+          { text: "Go to Profile", onPress: () => navigation.navigate("Tabs", { screen: "Profile" }) },
+          { text: "Cancel", style: "cancel" },
+        ]
+      );
+    }
     setPaying(true);
     try {
       if (user?.demo) throw new Error("demo");

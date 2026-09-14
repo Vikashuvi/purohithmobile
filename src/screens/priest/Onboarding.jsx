@@ -194,6 +194,19 @@ export default function PriestOnboarding() {
         updated_at: now,
       }, { onConflict: "user_id" });
       if (profileError) throw profileError;
+
+      const { data: profileRecord } = await supabase.from("priest_profiles").select("id").eq("user_id", user.id).maybeSingle();
+      if (profileRecord?.id && poojas.size > 0) {
+        const serviceRows = Array.from(poojas).map((slug) => ({
+          priest_id: profileRecord.id,
+          pooja_slug: slug,
+          price_paise: Math.max(startingValue || 100, 100) * 100,
+          is_active: true,
+          updated_at: now,
+        }));
+        await supabase.from("priest_services").upsert(serviceRows, { onConflict: "priest_id,pooja_slug" });
+      }
+
       await completeOnboarding();
       Alert.alert("Profile submitted", "Your profile is saved and has been sent for verification.");
     } catch (error) {
