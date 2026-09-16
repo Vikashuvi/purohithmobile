@@ -2,8 +2,8 @@ import React from "react";
 import { Modal, Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
 import { MapPin, Navigation, X } from "lucide-react-native";
 import { colors, radii, spacing } from "../lib/theme";
-import OpenStreetMap from "./OpenStreetMap";
-import { normalizeLocation, openInGoogleMaps, openInMappls } from "../lib/maps";
+import MapplsMap from "./MapplsMap";
+import { normalizeLocation, openInMappls, openInMapplsDirections } from "../lib/maps";
 
 export default function MapplsDrawer({ visible, onClose, location }) {
   const point = normalizeLocation(location);
@@ -23,7 +23,7 @@ export default function MapplsDrawer({ visible, onClose, location }) {
             <Pressable accessibilityLabel="Close map drawer" onPress={onClose} style={styles.close}><X size={18} color={colors.ink} /></Pressable>
           </View>
           <View style={styles.mapWrap}>
-            <OpenStreetMap latitude={point.latitude} longitude={point.longitude} title={title} address={address} style={styles.map} />
+            <MapplsMap latitude={point.latitude} longitude={point.longitude} title={title} address={address} style={styles.map} />
           </View>
           <View style={styles.detail}>
             <Text style={styles.address}>{address}</Text>
@@ -33,10 +33,10 @@ export default function MapplsDrawer({ visible, onClose, location }) {
           <View style={styles.actions}>
             <Pressable onPress={() => openInMappls(point)} style={({ pressed }) => [styles.primary, pressed && styles.pressed]}>
               <Navigation size={16} color={colors.white} />
-              <Text style={styles.primaryText}>Open Mappls</Text>
+              <Text style={styles.primaryText}>Open in Mappls</Text>
             </Pressable>
-            <Pressable onPress={() => openInGoogleMaps(point)} style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}>
-              <Text style={styles.secondaryText}>Open fallback map</Text>
+            <Pressable onPress={() => openInMapplsDirections(point)} style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}>
+              <Text style={styles.secondaryText}>Mappls Directions</Text>
             </Pressable>
           </View>
         </SafeAreaView>

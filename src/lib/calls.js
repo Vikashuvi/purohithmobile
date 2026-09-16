@@ -1,7 +1,7 @@
-import { Alert, Linking, Platform } from "react-native";
+import { Alert } from "react-native";
 
 /**
- * Normalizes phone number into a dialable format (defaults to Indian +91 if 10 digits).
+ * Normalizes phone number into a standard format.
  */
 export function sanitizePhoneNumber(phone) {
   if (!phone) return "";
@@ -13,7 +13,21 @@ export function sanitizePhoneNumber(phone) {
 }
 
 /**
- * Formats a phone number for pleasant UI display.
+ * Securely masks a phone number for user privacy (e.g. +91 ••••• ••102).
+ * Phone numbers are NEVER displayed unmasked to other users.
+ */
+export function maskPhoneNumber(phone) {
+  if (!phone) return "";
+  const sanitized = sanitizePhoneNumber(phone);
+  if (sanitized.length >= 10) {
+    const last3 = sanitized.slice(-3);
+    return `+91 ••••• ••${last3}`;
+  }
+  return "••••••••••";
+}
+
+/**
+ * Formats a user's OWN phone number for their private profile display.
  */
 export function formatPhoneDisplay(phone) {
   if (!phone) return "";
@@ -25,78 +39,41 @@ export function formatPhoneDisplay(phone) {
 }
 
 /**
- * Directly dials a phone number using the native dialer (tel: scheme).
+ * Directly launches the 100% private in-app call room.
+ * No mobile numbers are ever shared between customers and purohits.
  */
-export async function makePhoneCall(phoneNumber, name = "Contact") {
-  const sanitized = sanitizePhoneNumber(phoneNumber);
-  if (!sanitized) {
-    Alert.alert("Phone number unavailable", "No phone number is registered for this contact.");
-    return false;
+export function startInAppCall(navigation, { bookingId, booking } = {}) {
+  if (!navigation) {
+    console.warn("Navigation object required to start in-app call");
+    return;
   }
+  navigation.navigate("CallRoom", {
+    bookingId: bookingId || booking?.id,
+    booking,
+  });
+}
 
-  const telUrl = `tel:${sanitized}`;
-  try {
-    const canOpen = await Linking.canOpenURL(telUrl).catch(() => false);
-    if (canOpen || Platform.OS !== "web") {
-      await Linking.openURL(telUrl);
-      return true;
-    }
-    // Web / desktop browser fallback
-    if (Platform.OS === "web" && typeof window !== "undefined") {
-      window.open(telUrl, "_self");
-      return true;
-    }
-  } catch (err) {
-    console.warn("Direct phone dialer failed:", err);
+/**
+ * Initiates in-app call directly.
+ * Preserved for backward-compatibility with screens, enforcing in-app call only.
+ */
+export function promptCallAction({ onInAppCall, navigation, bookingId, booking }) {
+  if (typeof onInAppCall === "function") {
+    onInAppCall();
+  } else if (navigation) {
+    startInAppCall(navigation, { bookingId, booking });
   }
+}
 
-  // Fallback if simulator/device doesn't support phone dialer
+/**
+ * Direct phone dialing between users is disabled for privacy and safety.
+ */
+export async function makePhoneCall() {
   Alert.alert(
-    `Call ${name}`,
-    `Phone number: ${formatPhoneDisplay(sanitized)}\n\n(Direct calling is available on physical mobile devices with phone capabilities.)`,
+    "In-App Calling Only",
+    "To protect your privacy and security, direct phone numbers are never shared. Please use the secure in-app voice/video call.",
     [{ text: "OK" }]
   );
   return false;
 }
 
-/**
- * Prompts user with options to either place a direct mobile call or use the in-app private call room.
- */
-export function promptCallAction({ phoneNumber, name = "Contact", onInAppCall }) {
-  const display = formatPhoneDisplay(phoneNumber);
-
-  if (!phoneNumber) {
-    if (onInAppCall) {
-      onInAppCall();
-    } else {
-      Alert.alert("Phone call unavailable", "No contact phone number is available for this booking.");
-    }
-    return;
-  }
-
-  const buttons = [
-    {
-      text: `Call ${display}`,
-      onPress: () => makePhoneCall(phoneNumber, name),
-    },
-  ];
-
-  if (onInAppCall) {
-    buttons.push({
-      text: "In-App Private Call",
-      onPress: onInAppCall,
-    });
-  }
-
-  buttons.push({
-    text: "Cancel",
-    style: "cancel",
-  });
-
-  Alert.alert(
-    `Contact ${name}`,
-    `Choose how you would like to connect:`,
-    buttons,
-    { cancelable: true }
-  );
-}

@@ -3,7 +3,7 @@ import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, Vi
 import * as Location from "expo-location";
 import { ChevronRight, LocateFixed, MapPin, Sparkles, WalletCards } from "lucide-react-native";
 import { colors, radii, spacing } from "../../lib/theme";
-import OpenStreetMap from "../../components/OpenStreetMap";
+import MapplsMap from "../../components/MapplsMap";
 import MapplsDrawer from "../../components/MapplsDrawer";
 import { useAuth } from "../../lib/auth";
 import { createCeremonyRequest } from "../../lib/payments";
@@ -106,7 +106,7 @@ export default function RequestPooja({ navigation, route }) {
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateList}>{dates.map((item) => <Pressable key={iso(item)} onPress={() => setDate(iso(item))} style={[styles.date, date === iso(item) && styles.dateActive]}><Text style={[styles.dateDow, date === iso(item) && styles.dateTextActive]}>{item.toLocaleDateString("en-IN", { weekday: "short" })}</Text><Text style={[styles.dateNum, date === iso(item) && styles.dateTextActive]}>{item.getDate()}</Text></Pressable>)}</ScrollView>
       <View style={styles.timeRow}>{["06:00", "09:00", "16:00", "19:00"].map((slot) => <Pressable key={slot} onPress={() => setTime(slot)} style={[styles.time, time === slot && styles.timeActive]}><Text style={[styles.timeText, time === slot && { color: colors.white }]}>{slot}</Text></Pressable>)}</View>
       <Text style={styles.label}>Where <Text style={styles.requiredStar}>*</Text></Text>
-      <Pressable onPress={() => setMapOpen(true)} style={styles.mapWrap}><OpenStreetMap latitude={latitude} longitude={longitude} title={ceremony?.[1]} address={address || "Bengaluru preview"} style={styles.map} /><View style={styles.mapBadge}><MapPin size={14} color={colors.ink} /><Text style={styles.mapBadgeText}>{coords ? "Exact ceremony pin" : "Bengaluru preview"}</Text></View></Pressable>
+      <Pressable onPress={() => setMapOpen(true)} style={styles.mapWrap}><MapplsMap latitude={latitude} longitude={longitude} title={ceremony?.[1]} address={address || "Bengaluru preview"} style={styles.map} /><View style={styles.mapBadge}><MapPin size={14} color={colors.ink} /><Text style={styles.mapBadgeText}>{coords ? "Exact ceremony pin" : "Bengaluru preview"}</Text></View></Pressable>
       <Pressable onPress={useCurrentLocation} disabled={locating} style={({ pressed }) => [styles.locationButton, pressed && styles.locationPressed]}>
         <LocateFixed size={18} color={colors.ink} /><Text style={styles.locationButtonText}>{locating ? "Reading location..." : "Use current location"}</Text>
       </Pressable>

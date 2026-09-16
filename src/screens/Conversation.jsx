@@ -6,7 +6,7 @@ import { useNavigation } from "@react-navigation/native";
 import { colors, font, spacing } from "../lib/theme";
 import { useAuth } from "../lib/auth";
 import api from "../lib/api";
-import { promptCallAction } from "../lib/calls";
+import { startInAppCall } from "../lib/calls";
 
 const demoMessages = (isCustomer) => [{
   id: "welcome",
@@ -83,17 +83,8 @@ export default function Conversation({ route }) {
         <Pressable accessibilityLabel="Back to booking" onPress={() => navigation.goBack()} hitSlop={12} style={styles.iconBtn}><ArrowLeft size={20} color={colors.ink} /></Pressable>
         <View style={styles.identity}><View style={styles.avatar}><Text style={styles.avatarText}>{title.slice(0, 1)}</Text></View><View><Text style={styles.title}>{title}</Text><Text style={styles.subtitle}>{booking?.pooja_name || "Booking conversation"}</Text></View></View>
         <Pressable
-          accessibilityLabel="Start call"
-          onPress={() => {
-            const targetPhone = isCustomer
-              ? (booking?.priest_phone || booking?.priest?.phone || (booking?.demo || bookingId === "demo-confirmed" ? "9876543210" : ""))
-              : (booking?.customer_phone || booking?.customer?.phone || (booking?.demo || bookingId === "demo-confirmed" ? "9000000001" : ""));
-            promptCallAction({
-              phoneNumber: targetPhone,
-              name: title,
-              onInAppCall: () => navigation.navigate("CallRoom", { bookingId, booking }),
-            });
-          }}
+          accessibilityLabel="Start in-app call"
+          onPress={() => startInAppCall(navigation, { bookingId, booking })}
           style={styles.callBtn}
         >
           <Phone size={18} color={colors.ink} />
