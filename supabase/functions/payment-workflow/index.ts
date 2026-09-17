@@ -232,6 +232,8 @@ async function createCashfreeOrder(supabase: any, body: any, identity: any) {
   let booking: any = null;
   let priestId: string | null = null;
   let poojaSlug = clean(body.pooja_slug);
+  const feePercent = await getPlatformServiceFeePercent(supabase);
+  let basePaise = 0;
   let amountPaise = 0;
 
   if (requestId) {
@@ -243,7 +245,9 @@ async function createCashfreeOrder(supabase: any, body: any, identity: any) {
     if (!proposal) return json({ error: "The accepted proposal was not found" }, 404);
     priestId = proposal.priest_id;
     poojaSlug = request.pooja_slug;
-    amountPaise = Number(proposal.amount_inr) * 100;
+    basePaise = Number(proposal.amount_inr) * 100;
+    const serviceFeePaise = Math.round(basePaise * (feePercent / 100));
+    amountPaise = basePaise + serviceFeePaise;
     bookingId = request.booking_id;
     if (!bookingId) {
       booking = await insertPendingBooking(supabase, {
@@ -251,6 +255,8 @@ async function createCashfreeOrder(supabase: any, body: any, identity: any) {
         priestId,
         poojaSlug,
         amountPaise,
+        baseInr: Math.round(basePaise / 100),
+        serviceFeeInr: Math.round(serviceFeePaise / 100),
         bookingDate: request.ceremony_date,
         bookingTime: request.ceremony_time,
         address: request.address,
@@ -268,7 +274,11 @@ async function createCashfreeOrder(supabase: any, body: any, identity: any) {
     booking = data;
     priestId = data.priest_id;
     poojaSlug = data.pooja_slug;
-    amountPaise = Number(data.total_inr) * 100;
+    basePaise = Number(data.pooja_price_inr || data.total_inr) * 100;
+    const serviceFeePaise = data.service_fee_inr != null
+      ? Math.round(Number(data.service_fee_inr) * 100)
+      : Math.round(basePaise * (feePercent / 100));
+    amountPaise = Number(data.total_inr) * 100 || (basePaise + serviceFeePaise);
   } else {
     priestId = cleanUuid(body.priest_id);
     if (!priestId || !poojaSlug) return json({ error: "Purohit and ceremony are required" }, 400);
@@ -277,12 +287,16 @@ async function createCashfreeOrder(supabase: any, body: any, identity: any) {
       .select("price_paise,is_active")
       .eq("priest_id", priestId).eq("pooja_slug", poojaSlug).eq("is_active", true).maybeSingle();
     if (!service) return json({ error: "This purohit has not published a price for the selected ceremony" }, 409);
-    amountPaise = Number(service.price_paise);
+    basePaise = Number(service.price_paise);
+    const serviceFeePaise = Math.round(basePaise * (feePercent / 100));
+    amountPaise = basePaise + serviceFeePaise;
     booking = await insertPendingBooking(supabase, {
       customerId: identity.id,
       priestId,
       poojaSlug,
       amountPaise,
+      baseInr: Math.round(basePaise / 100),
+      serviceFeeInr: Math.round(serviceFeePaise / 100),
       bookingDate: clean(body.booking_date),
       bookingTime: clean(body.booking_time),
       address: clean(body.address),
@@ -344,7 +358,15 @@ async function createCashfreeOrder(supabase: any, body: any, identity: any) {
     provider_status: providerOrder.order_status,
     return_url: returnUrl,
     expires_at: providerOrder.order_expiry_time || null,
-    metadata: { cf_order: sanitizeProviderPayload(providerOrder) },
+    metadata: {
+      cf_order: sanitizeProviderPayload(providerOrder),
+      fee_breakdown: {
+        service_fee_percent: feePercent,
+        base_paise: basePaise,
+        service_fee_paise: Math.round(basePaise * (feePercent / 100)),
+        total_paise: amountPaise,
+      },
+    },
   }).select("*").single();
   if (error) throw error;
 
@@ -398,6 +420,8 @@ async function insertPendingBooking(supabase: any, details: any) {
   ]);
   if (!priest || !pooja) throw new Error("Purohit or ceremony not found");
   const total = Math.round(Number(details.amountPaise) / 100);
+  const baseInr = details.baseInr || total;
+  const serviceFeeInr = details.serviceFeeInr || 0;
   const subtotal = Math.round(total / 1.18);
   const { data, error } = await supabase.from("bookings").insert({
     customer_id: details.customerId,
@@ -420,7 +444,8 @@ async function insertPendingBooking(supabase: any, details: any) {
     customer_email: customer?.email || "",
     priest_name: priest.display_name,
     pooja_name: pooja.name,
-    pooja_price_inr: total,
+    pooja_price_inr: baseInr,
+    service_fee_inr: serviceFeeInr,
     addons_total_inr: 0,
     payment_provider: "cashfree",
   }).select("*").single();
@@ -464,7 +489,10 @@ async function markBookingPaid(supabase: any, order: any) {
     updated_at: new Date().toISOString(),
   }).eq("id", booking.id);
   if (order.request_id) await supabase.from("ceremony_requests").update({ payment_status: "paid", status: "awarded", updated_at: new Date().toISOString() }).eq("id", order.request_id);
-  const platformFee = Math.round(Number(order.amount_paise) * 0.1);
+  const feePercent = Number(order.metadata?.fee_breakdown?.service_fee_percent) || await getPlatformServiceFeePercent(supabase);
+  const platformFee = typeof order.metadata?.fee_breakdown?.service_fee_paise === "number"
+    ? order.metadata.fee_breakdown.service_fee_paise
+    : Math.round(Number(order.amount_paise) * (feePercent / (100 + feePercent)));
   await supabase.from("provider_earnings").upsert({
     booking_id: booking.id,
     payment_order_id: order.id,
@@ -677,6 +705,21 @@ async function cashfreeRequest(path: string, options: any) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.message || payload.type || `Cashfree request failed (${response.status})`);
   return payload;
+}
+
+async function getPlatformServiceFeePercent(supabase: any): Promise<number> {
+  try {
+    const { data, error } = await supabase
+      .from("platform_settings")
+      .select("value")
+      .eq("key", "payment_service_fee_percent")
+      .maybeSingle();
+    if (error || !data?.value) return 10;
+    const parsed = Number(data.value);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 10;
+  } catch {
+    return 10;
+  }
 }
 
 function cashfreeConfigured() {
