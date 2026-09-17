@@ -233,7 +233,6 @@ async function createCashfreeOrder(supabase: any, body: any, identity: any) {
   let priestId: string | null = null;
   let poojaSlug = clean(body.pooja_slug);
   const feePercent = await getPlatformServiceFeePercent(supabase);
-  let basePaise = 0;
   let amountPaise = 0;
 
   if (requestId) {
@@ -245,9 +244,7 @@ async function createCashfreeOrder(supabase: any, body: any, identity: any) {
     if (!proposal) return json({ error: "The accepted proposal was not found" }, 404);
     priestId = proposal.priest_id;
     poojaSlug = request.pooja_slug;
-    basePaise = Number(proposal.amount_inr) * 100;
-    const serviceFeePaise = Math.round(basePaise * (feePercent / 100));
-    amountPaise = basePaise + serviceFeePaise;
+    amountPaise = Number(proposal.amount_inr) * 100;
     bookingId = request.booking_id;
     if (!bookingId) {
       booking = await insertPendingBooking(supabase, {
@@ -255,8 +252,6 @@ async function createCashfreeOrder(supabase: any, body: any, identity: any) {
         priestId,
         poojaSlug,
         amountPaise,
-        baseInr: Math.round(basePaise / 100),
-        serviceFeeInr: Math.round(serviceFeePaise / 100),
         bookingDate: request.ceremony_date,
         bookingTime: request.ceremony_time,
         address: request.address,
@@ -274,11 +269,7 @@ async function createCashfreeOrder(supabase: any, body: any, identity: any) {
     booking = data;
     priestId = data.priest_id;
     poojaSlug = data.pooja_slug;
-    basePaise = Number(data.pooja_price_inr || data.total_inr) * 100;
-    const serviceFeePaise = data.service_fee_inr != null
-      ? Math.round(Number(data.service_fee_inr) * 100)
-      : Math.round(basePaise * (feePercent / 100));
-    amountPaise = Number(data.total_inr) * 100 || (basePaise + serviceFeePaise);
+    amountPaise = Number(data.total_inr) * 100;
   } else {
     priestId = cleanUuid(body.priest_id);
     if (!priestId || !poojaSlug) return json({ error: "Purohit and ceremony are required" }, 400);
@@ -287,16 +278,12 @@ async function createCashfreeOrder(supabase: any, body: any, identity: any) {
       .select("price_paise,is_active")
       .eq("priest_id", priestId).eq("pooja_slug", poojaSlug).eq("is_active", true).maybeSingle();
     if (!service) return json({ error: "This purohit has not published a price for the selected ceremony" }, 409);
-    basePaise = Number(service.price_paise);
-    const serviceFeePaise = Math.round(basePaise * (feePercent / 100));
-    amountPaise = basePaise + serviceFeePaise;
+    amountPaise = Number(service.price_paise);
     booking = await insertPendingBooking(supabase, {
       customerId: identity.id,
       priestId,
       poojaSlug,
       amountPaise,
-      baseInr: Math.round(basePaise / 100),
-      serviceFeeInr: Math.round(serviceFeePaise / 100),
       bookingDate: clean(body.booking_date),
       bookingTime: clean(body.booking_time),
       address: clean(body.address),
@@ -362,9 +349,9 @@ async function createCashfreeOrder(supabase: any, body: any, identity: any) {
       cf_order: sanitizeProviderPayload(providerOrder),
       fee_breakdown: {
         service_fee_percent: feePercent,
-        base_paise: basePaise,
-        service_fee_paise: Math.round(basePaise * (feePercent / 100)),
-        total_paise: amountPaise,
+        gross_paise: amountPaise,
+        platform_fee_paise: Math.round(amountPaise * (feePercent / 100)),
+        net_paise: amountPaise - Math.round(amountPaise * (feePercent / 100)),
       },
     },
   }).select("*").single();
@@ -490,9 +477,9 @@ async function markBookingPaid(supabase: any, order: any) {
   }).eq("id", booking.id);
   if (order.request_id) await supabase.from("ceremony_requests").update({ payment_status: "paid", status: "awarded", updated_at: new Date().toISOString() }).eq("id", order.request_id);
   const feePercent = Number(order.metadata?.fee_breakdown?.service_fee_percent) || await getPlatformServiceFeePercent(supabase);
-  const platformFee = typeof order.metadata?.fee_breakdown?.service_fee_paise === "number"
-    ? order.metadata.fee_breakdown.service_fee_paise
-    : Math.round(Number(order.amount_paise) * (feePercent / (100 + feePercent)));
+  const platformFee = typeof order.metadata?.fee_breakdown?.platform_fee_paise === "number"
+    ? order.metadata.fee_breakdown.platform_fee_paise
+    : Math.round(Number(order.amount_paise) * (feePercent / 100));
   await supabase.from("provider_earnings").upsert({
     booking_id: booking.id,
     payment_order_id: order.id,

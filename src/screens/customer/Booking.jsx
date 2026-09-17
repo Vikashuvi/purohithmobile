@@ -52,7 +52,6 @@ export default function Booking({ route, navigation }) {
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmed, setConfirmed] = useState(null);
-  const [serviceFeePercent, setServiceFeePercent] = useState(10);
   const { width } = useWindowDimensions();
   const desktop = width >= 860;
 
@@ -86,8 +85,7 @@ export default function Booking({ route, navigation }) {
 
   useEffect(() => {
     fetchMarketplacePoojas()
-      .then(({ poojas, service_fee_percent }) => {
-        if (typeof service_fee_percent === "number") setServiceFeePercent(service_fee_percent);
+      .then(({ poojas }) => {
         const next = poojas?.length ? poojas : DEFAULT_POOJAS;
         setPoojaCatalog(next);
         const found = next.find((item) => item.slug === selectedPoojaSlug) || next[0] || DEFAULT_POOJAS[2];
@@ -140,18 +138,17 @@ export default function Booking({ route, navigation }) {
   }, [availablePoojas, selectedPoojaSlug]);
 
   const totals = useMemo(() => {
-    if (!pooja) return { pooja_price: 0, addons: 0, service_fee: 0, subtotal: 0, gst: 0, fee_percent: serviceFeePercent };
+    if (!pooja) return { pooja_price: 0, addons: 0, subtotal: 0, gst: 0 };
     const price = publishedService?.price_inr
       ?? (priest?.starting_price_inr ? Number(priest.starting_price_inr) : null)
       ?? pooja.base_price
       ?? 0;
     const pooja_price = Number(price || 0);
-    const service_fee = Math.round(pooja_price * (serviceFeePercent / 100));
-    const subtotal = pooja_price + service_fee;
+    const subtotal = pooja_price;
     const base = +(subtotal / 1.18).toFixed(2);
     const gst = +(subtotal - base).toFixed(2);
-    return { pooja_price, addons: 0, service_fee, subtotal, gst, fee_percent: serviceFeePercent };
-  }, [pooja, publishedService, priest, serviceFeePercent]);
+    return { pooja_price, addons: 0, subtotal, gst };
+  }, [pooja, publishedService, priest]);
 
   useEffect(() => {
     if (user?.phone && !phone) {
@@ -393,12 +390,6 @@ export default function Booking({ route, navigation }) {
         {/* Cart breakdown */}
         <Card testID="cart-breakdown" style={{ marginTop: spacing.md, ...shadow.card }}>
           <Row label={pooja.name} value={`₹${totals.pooja_price.toLocaleString("en-IN")}`} />
-          {totals.service_fee > 0 && (
-            <Row
-              label={`Service charge (${totals.fee_percent}%)`}
-              value={`₹${totals.service_fee.toLocaleString("en-IN")}`}
-            />
-          )}
           <View style={{ height: 1, backgroundColor: colors.warmBorder, marginVertical: 8 }} />
           <Text style={{ color: colors.muted2, fontSize: font.sizes.xs }}>{t.includingGst} (₹{totals.gst.toLocaleString("en-IN")})</Text>
           <Row label={t.total} value={`₹${totals.subtotal.toLocaleString("en-IN")}`} tone="saffron" />

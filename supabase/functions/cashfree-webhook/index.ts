@@ -133,9 +133,9 @@ async function markPaid(supabase: any, order: any, now: string) {
   }
 
   const feePercent = Number(order.metadata?.fee_breakdown?.service_fee_percent) || (await getPlatformServiceFeePercent(supabase));
-  const platformFee = typeof order.metadata?.fee_breakdown?.service_fee_paise === "number"
-    ? order.metadata.fee_breakdown.service_fee_paise
-    : Math.round(Number(order.amount_paise) * (feePercent / (100 + feePercent)));
+  const platformFee = typeof order.metadata?.fee_breakdown?.platform_fee_paise === "number"
+    ? order.metadata.fee_breakdown.platform_fee_paise
+    : Math.round(Number(order.amount_paise) * (feePercent / 100));
   await supabase.from("provider_earnings").upsert({
     booking_id: booking.id,
     payment_order_id: order.id,
