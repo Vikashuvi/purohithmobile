@@ -1,11 +1,9 @@
 import React, { useMemo, useState } from "react";
 import { bindBrandStyles } from "../../lib/brandStyles";
 import { Alert, Platform, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from "react-native";
-import * as Location from "expo-location";
-import { ChevronRight, LocateFixed, MapPin, Sparkles, WalletCards } from "lucide-react-native";
+import { ChevronRight, MapPin, Sparkles, WalletCards } from "lucide-react-native";
 import { colors, radii, spacing } from "../../lib/theme";
-import MapplsMap from "../../components/MapplsMap";
-import MapplsDrawer from "../../components/MapplsDrawer";
+import LocationPicker from "../../components/LocationPicker";
 import { useAuth } from "../../lib/auth";
 import { createCeremonyRequest } from "../../lib/payments";
 
@@ -44,33 +42,11 @@ export default function RequestPooja({ navigation, route }) {
   const [budgetMax, setBudgetMax] = useState("");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
-  const [locating, setLocating] = useState(false);
-  const [mapOpen, setMapOpen] = useState(false);
   const ceremony = useMemo(() => CEREMONIES.find(([slug]) => slug === poojaSlug), [poojaSlug]);
-  const latitude = coords?.latitude || 12.9784;
-  const longitude = coords?.longitude || 77.6408;
-
-  const useCurrentLocation = async () => {
-    setLocating(true);
-    try {
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (permission.status !== "granted") return Alert.alert("Location permission required", "Allow location access so purohits can see the exact ceremony area.");
-      const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      const nextCoords = { latitude: current.coords.latitude, longitude: current.coords.longitude };
-      setCoords(nextCoords);
-      const places = await Location.reverseGeocodeAsync(nextCoords).catch(() => []);
-      const place = places?.[0];
-      if (place) {
-        const parts = [place.name, place.street, place.district || place.subregion, place.city, place.region].filter(Boolean);
-        setAddress((currentAddress) => currentAddress || parts.join(", "));
-      }
-    } catch (error) {
-      Alert.alert("Could not read location", error?.message || "Please enter the street address manually.");
-    } finally { setLocating(false); }
-  };
 
   const submit = async () => {
     if (address.trim().length < 8) return Alert.alert("Add your service address", "Purohits need an area or address to prepare their proposal.");
+    if (!coords) return Alert.alert("Pin your location", "Search for your address, use current location, or tap the map so purohits can see the ceremony area.");
     if (!user?.id || user?.demo) {
       return navigation.replace("RequestProposals", proposalParams({ id: "demo-request", pooja_name: ceremony?.[1], ceremony_date: date, ceremony_time: time, address, landmark, lat: coords?.latitude, lng: coords?.longitude }));
     }
@@ -107,11 +83,8 @@ export default function RequestPooja({ navigation, route }) {
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateList}>{dates.map((item) => <Pressable key={iso(item)} onPress={() => setDate(iso(item))} style={[styles.date, date === iso(item) && styles.dateActive]}><Text style={[styles.dateDow, date === iso(item) && styles.dateTextActive]}>{item.toLocaleDateString("en-IN", { weekday: "short" })}</Text><Text style={[styles.dateNum, date === iso(item) && styles.dateTextActive]}>{item.getDate()}</Text></Pressable>)}</ScrollView>
       <View style={styles.timeRow}>{["06:00", "09:00", "16:00", "19:00"].map((slot) => <Pressable key={slot} onPress={() => setTime(slot)} style={[styles.time, time === slot && styles.timeActive]}><Text style={[styles.timeText, time === slot && { color: colors.white }]}>{slot}</Text></Pressable>)}</View>
       <Text style={styles.label}>Where <Text style={styles.requiredStar}>*</Text></Text>
-      <Pressable onPress={() => setMapOpen(true)} style={styles.mapWrap}><MapplsMap latitude={latitude} longitude={longitude} title={ceremony?.[1]} address={address || "Bengaluru preview"} style={styles.map} /><View style={styles.mapBadge}><MapPin size={14} color={colors.ink} /><Text style={styles.mapBadgeText}>{coords ? "Exact ceremony pin" : "Bengaluru preview"}</Text></View></Pressable>
-      <Pressable onPress={useCurrentLocation} disabled={locating} style={({ pressed }) => [styles.locationButton, pressed && styles.locationPressed]}>
-        <LocateFixed size={18} color={colors.ink} /><Text style={styles.locationButtonText}>{locating ? "Reading location..." : "Use current location"}</Text>
-      </Pressable>
-      <View style={styles.field}><MapPin size={18} color={colors.saffron} /><TextInput value={address} onChangeText={setAddress} placeholder="Flat, street, area, Bengaluru" placeholderTextColor="#8D8A85" style={styles.input} /></View>
+      <LocationPicker coords={coords} onCoordsChange={setCoords} address={address} onAddressChange={setAddress} title={ceremony?.[1]} />
+      <View style={[styles.field, { marginTop: 10 }]}><MapPin size={18} color={colors.saffron} /><TextInput value={address} onChangeText={setAddress} placeholder="Flat / house no., building, street, area" placeholderTextColor="#8D8A85" style={styles.input} /></View>
       <TextInput value={landmark} onChangeText={setLandmark} placeholder="Landmark, apartment, gate number" placeholderTextColor="#8D8A85" style={[styles.field, styles.fullInput]} />
       <Text style={styles.label}>Budget range <Text style={styles.optional}>optional</Text></Text>
       <View style={styles.budgetRow}>
@@ -131,7 +104,6 @@ export default function RequestPooja({ navigation, route }) {
       </View>
       </View>
     </ScrollView>
-    <MapplsDrawer visible={mapOpen} onClose={() => setMapOpen(false)} location={{ latitude, longitude, address: address || "Bengaluru preview", landmark, title: ceremony?.[1] }} />
     <View style={styles.footer}><SubmitRequestButton busy={busy} onPress={submit} /></View>
   </View>;
 }

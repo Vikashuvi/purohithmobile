@@ -1,15 +1,16 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { bindBrandStyles } from "../../lib/brandStyles";
 import { View, Text, ScrollView, TextInput, Alert, Pressable, Platform, ActivityIndicator, useWindowDimensions } from "react-native";
-import { Check, Download, Info, Send, ShieldCheck, UserRound, WalletCards } from "lucide-react-native";
+import { Info, Send, ShieldCheck, UserRound, WalletCards } from "lucide-react-native";
 import { colors, radii, spacing, font, shadow } from "../../lib/theme";
 import { Button, Card, Field } from "../../components/UI";
 import { useI18n } from "../../lib/i18n";
 import api from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { fetchMarketplacePoojas, fetchMarketplaceProfile } from "../../lib/marketplace";
-import { createCashfreeOrder, downloadInvoice, openCashfreeCheckout, verifyCashfreeOrder } from "../../lib/payments";
+import { createBookingRequest } from "../../lib/payments";
 import { getLocalPriest } from "../../data/localPriests";
+import LocationPicker from "../../components/LocationPicker";
 
 const TIME_SLOTS = ["06:00", "07:30", "09:00", "10:30", "16:00", "17:30", "19:00"];
 const DEFAULT_POOJAS = [
@@ -48,6 +49,7 @@ export default function Booking({ route, navigation }) {
   const [time, setTime] = useState("");
   const [address, setAddress] = useState("");
   const [landmark, setLandmark] = useState("");
+  const [coords, setCoords] = useState(null);
   const [phone, setPhone] = useState(user?.phone || "");
   const [email, setEmail] = useState("");
   const [notes, setNotes] = useState("");
@@ -158,7 +160,8 @@ export default function Booking({ route, navigation }) {
   }, [user?.phone, phone]);
 
   const submit = async () => {
-    if (!date || !time || !address) return Alert.alert("Missing", "Choose date, time and address");
+    if (!date || !time || !address.trim()) return Alert.alert("Missing", "Choose date, time and address");
+    if (!coords) return Alert.alert("Pin your location", "Search for your address, use current location, or tap the map so the purohit can find you.");
     const cleanPhone = (phone || user?.phone || "").replace(/\D/g, "").slice(-10);
     if (!cleanPhone || cleanPhone.length !== 10) {
       return Alert.alert(
@@ -179,28 +182,23 @@ export default function Booking({ route, navigation }) {
       if (updateProfile) {
         await updateProfile({ phone: cleanPhone });
       }
-      const data = await createCashfreeOrder({
+      const data = await createBookingRequest({
         priest_id: priestId,
         pooja_slug: selectedPoojaSlug,
         booking_date: date,
         booking_time: time,
-        address, landmark, notes, customer_email: email,
+        address: address.trim(), landmark, notes, customer_email: email,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
         customer_phone: cleanPhone,
       });
-      await openCashfreeCheckout(data.order);
-      const verified = await verifyCashfreeOrder({ payment_order_id: data.order.id });
-      if (verified.order?.status !== "paid") {
-        return Alert.alert("Payment pending", "Cashfree has not confirmed this payment yet. You can retry verification from My Bookings.");
-      }
       setConfirmed({
         ...(data.booking || {}),
-        ...(verified.booking || {}),
-        payment_receipt_token: verified.order.customer_receipt_token,
         priest_name: priest.name,
         pooja_name: pooja.name,
         booking_date: date,
         booking_time: time,
-        total_amount: verified.order.amount_inr,
+        total_amount: data.booking?.total_inr || totals.subtotal,
       });
     } catch (e) {
       if (user?.demo) {
@@ -232,18 +230,20 @@ export default function Booking({ route, navigation }) {
     return (
       <ScrollView contentContainerStyle={[styles.confirmedPage, desktop && styles.contentDesktop]}>
         <View style={{ alignItems: "center" }}>
-          <View style={styles.successIcon}><Check size={34} color={colors.white} strokeWidth={3} /></View>
-          <Text style={styles.h1}>{language === "kn" ? "ಬುಕಿಂಗ್ ದೃಢಪಟ್ಟಿದೆ" : "Booking confirmed"}</Text>
+          <View style={styles.successIcon}><Send size={30} color={colors.white} strokeWidth={2.6} /></View>
+          <Text style={styles.h1}>{language === "kn" ? "ಬುಕಿಂಗ್ ವಿನಂತಿ ಕಳುಹಿಸಲಾಗಿದೆ" : "Request sent"}</Text>
           <Text style={styles.sub}>{confirmed.priest_name} · {confirmed.pooja_name}</Text>
           <Text style={styles.sub}>{confirmed.booking_date} · {confirmed.booking_time}</Text>
         </View>
         <Card style={{ marginTop: spacing.xl, ...shadow.card }}>
-          <Row label="Booking ID" value={confirmed.id.slice(0, 8)} />
-          {confirmed.invoice_no || confirmed.invoice_number ? <Row label="Invoice #" value={confirmed.invoice_no || confirmed.invoice_number} /> : null}
-          {confirmed.payment_receipt_token ? <Row label="Payment receipt" value={confirmed.payment_receipt_token.slice(0, 8).toUpperCase()} /> : null}
-          <Row label="Total paid" value={`₹${(confirmed.total_amount || confirmed.price).toLocaleString("en-IN")}`} tone="saffron" />
+          <Row label="Booking ID" value={String(confirmed.id).slice(0, 8)} />
+          <Row label="Status" value="Waiting for Purohit" />
+          <Row label="Amount to pay after acceptance" value={`₹${Number(confirmed.total_amount || 0).toLocaleString("en-IN")}`} tone="saffron" />
         </Card>
-        {confirmed.invoice_html ? <Button title="Download invoice" icon={Download} onPress={() => downloadInvoice(confirmed.invoice_html, confirmed.invoice_number || confirmed.invoice_no)} style={{ marginTop: spacing.md }} /> : null}
+        <View style={styles.nextSteps}>
+          <Info size={16} color={colors.brandBrown} />
+          <Text style={styles.nextStepsText}>Nothing is charged yet. We’ll notify you when {confirmed.priest_name} accepts, then you can pay securely from My Bookings to confirm.</Text>
+        </View>
         <Button testID="view-bookings-btn" title="View my bookings" onPress={() => navigation.navigate("Tabs", { screen: "Bookings" })} style={{ marginTop: spacing.xl }} />
       </ScrollView>
     );
@@ -251,7 +251,7 @@ export default function Booking({ route, navigation }) {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.white }}>
-      <ScrollView contentContainerStyle={[styles.content, desktop && styles.contentDesktop]}>
+      <ScrollView contentContainerStyle={[styles.content, desktop && styles.contentDesktop]} keyboardShouldPersistTaps="handled">
         <Text style={styles.eyebrow}>REVIEW AND CONTINUE</Text>
         <Text style={styles.h1}>{pooja.name}</Text>
         <View style={styles.providerSummary}>
@@ -354,10 +354,12 @@ export default function Booking({ route, navigation }) {
           </View>
         </Field>
 
-        {/* Address */}
+        <Field label="Ceremony location" required>
+          <LocationPicker coords={coords} onCoordsChange={setCoords} address={address} onAddressChange={setAddress} title={pooja.name} />
+        </Field>
         <Field label="Address" required>
           <TextInput testID="booking-address" multiline value={address} onChangeText={setAddress}
-            placeholder="Flat, street, area, Bengaluru" style={[styles.input, { minHeight: 80, paddingVertical: 12 }]} />
+            placeholder="Flat / house no., building, street, area" style={[styles.input, { minHeight: 80, paddingVertical: 12, textAlignVertical: "top" }]} />
         </Field>
         <Field label="Landmark (optional)">
           <TextInput testID="booking-landmark" value={landmark} onChangeText={setLandmark} placeholder="Near ABC temple" style={styles.input} />
@@ -384,8 +386,8 @@ export default function Booking({ route, navigation }) {
 
         <View style={desktop ? styles.summaryPane : undefined}>
         <Card style={styles.paymentCard}>
-          <View style={styles.paymentTop}><View style={styles.qrMark}><ShieldCheck size={22} color={colors.saffron} /></View><View style={{ flex: 1 }}><Text style={styles.paymentTitle}>Secure Cashfree checkout</Text><Text style={styles.paymentSub}>Pay by UPI, card, netbanking, or an available wallet. Payment status is verified by signed Cashfree webhooks before the booking is confirmed.</Text></View></View>
-          <View style={styles.secureLine}><WalletCards size={17} color={colors.ink} /><Text style={styles.secureText}>Your payment credentials are handled by Cashfree and are never stored in Purohith Connect.</Text></View>
+          <View style={styles.paymentTop}><View style={styles.qrMark}><ShieldCheck size={22} color={colors.saffron} /></View><View style={{ flex: 1 }}><Text style={styles.paymentTitle}>Pay only after the Purohit accepts</Text><Text style={styles.paymentSub}>Your request goes to {priest.name} first. Once they accept, you’ll get a notification to pay securely with Cashfree (UPI, card, netbanking or wallet).</Text></View></View>
+          <View style={styles.secureLine}><WalletCards size={17} color={colors.ink} /><Text style={styles.secureText}>Nothing is charged now. Your payment credentials are handled by Cashfree and are never stored in Purohith Connect.</Text></View>
         </Card>
 
         {/* Cart breakdown */}
@@ -409,7 +411,7 @@ export default function Booking({ route, navigation }) {
         </View>
         <Button
           testID="pay-btn"
-          title={!isOfferedCeremony ? "Select an offered ceremony" : busy ? "Opening secure checkout…" : `${t.payNow} with Cashfree`}
+          title={!isOfferedCeremony ? "Select an offered ceremony" : busy ? "Sending request…" : "Send booking request"}
           onPress={submit}
           disabled={busy || !isOfferedCeremony}
         />
@@ -471,7 +473,7 @@ const styles = bindBrandStyles({
   content: { width: "100%", maxWidth: 760, alignSelf: "center", padding: spacing.lg, paddingBottom: 170 }, contentDesktop: { maxWidth: 1160, paddingHorizontal: 36, paddingTop: 28 }, confirmedPage: { width: "100%", maxWidth: 680, alignSelf: "center", padding: spacing.xxl, paddingTop: 72, paddingBottom: 60 },
   eyebrow: { color: colors.saffron, fontSize: 10, fontWeight: "700", letterSpacing: .7, marginTop: 4 }, h1: { fontSize: 28, lineHeight: 34, fontWeight: "700", color: colors.ink, marginTop: 6 },
   sub: { color: colors.muted2, fontSize: 12, marginTop: 4 }, providerSummary: { minHeight: 72, flexDirection: "row", alignItems: "center", gap: 12, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.warmBorder, marginTop: 16 }, providerAvatar: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center", backgroundColor: colors.muted }, providerName: { color: colors.ink, fontSize: 14, fontWeight: "700" },
-  steps: { flexDirection: "row", alignItems: "flex-start", justifyContent: "center", marginTop: 22, marginBottom: 28 }, step: { width: 64, alignItems: "center" }, stepNumber: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.muted, alignItems: "center", justifyContent: "center" }, stepNumberActive: { backgroundColor: colors.brandBrown }, stepNumberText: { color: colors.muted2, fontSize: 10, fontWeight: "700" }, stepLabel: { color: colors.muted2, fontSize: 9, marginTop: 5 }, stepLine: { width: 42, height: 1, backgroundColor: colors.warmBorder, marginTop: 14 }, successIcon: { width: 72, height: 72, borderRadius: 36, alignItems: "center", justifyContent: "center", backgroundColor: colors.success, marginBottom: 20 },
+  steps: { flexDirection: "row", alignItems: "flex-start", justifyContent: "center", marginTop: 22, marginBottom: 28 }, step: { width: 64, alignItems: "center" }, stepNumber: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.muted, alignItems: "center", justifyContent: "center" }, stepNumberActive: { backgroundColor: colors.brandBrown }, stepNumberText: { color: colors.muted2, fontSize: 10, fontWeight: "700" }, stepLabel: { color: colors.muted2, fontSize: 9, marginTop: 5 }, stepLine: { width: 42, height: 1, backgroundColor: colors.warmBorder, marginTop: 14 }, successIcon: { width: 72, height: 72, borderRadius: 36, alignItems: "center", justifyContent: "center", backgroundColor: colors.success, marginBottom: 20 }, nextSteps: { flexDirection: "row", gap: 10, alignItems: "flex-start", marginTop: spacing.md, padding: spacing.md, borderRadius: radii.md, backgroundColor: colors.brandTint }, nextStepsText: { flex: 1, color: colors.brandBrown, fontSize: 12, lineHeight: 18, fontWeight: "600" },
   checkoutGrid: { flexDirection: "row", alignItems: "flex-start", gap: 24 },
   formPane: { flex: 1.45, minWidth: 0 },
   summaryPane: { flex: 0.9, minWidth: 340 },

@@ -1,9 +1,35 @@
 import { Linking } from "react-native";
 import Constants from "expo-constants";
+import { supabase } from "./supabase";
 
 export const mapplsConfig = {
   accessToken: process.env.EXPO_PUBLIC_MAPPLS_ACCESS_TOKEN || Constants.expoConfig?.extra?.mapplsAccessToken || "",
 };
+
+async function invokePlaceSearch(body) {
+  if (!supabase) throw new Error("Location search is not configured");
+  const { data, error } = await supabase.functions.invoke("place-search", { body });
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error);
+  return data || {};
+}
+
+export async function searchPlaces(query, near) {
+  const data = await invokePlaceSearch({ action: "autosuggest", query, lat: near?.latitude, lng: near?.longitude });
+  return data.places || [];
+}
+
+export async function resolvePlace(place) {
+  if (isValidCoordinate(place?.latitude, place?.longitude)) return place;
+  if (!place?.eloc) return null;
+  const data = await invokePlaceSearch({ action: "resolve", eloc: place.eloc, address: place.address });
+  return data.place ? { ...place, ...data.place, title: place.title, address: place.address } : null;
+}
+
+export async function reverseGeocode(latitude, longitude) {
+  const data = await invokePlaceSearch({ action: "reverse", lat: latitude, lng: longitude });
+  return data.place || null;
+}
 
 export function isValidCoordinate(latitude, longitude) {
   const lat = Number(latitude);

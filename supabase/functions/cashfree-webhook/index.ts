@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { formatInr, notifyUsers, priestUserId } from "../_shared/notify.ts";
 
 const encoder = new TextEncoder();
 
@@ -118,6 +119,7 @@ async function markPaid(supabase: any, order: any, now: string) {
   const invoiceNumber = booking.invoice_no || makeInvoiceNumber();
   const invoiceHtml = booking.invoice_html || renderInvoice(invoiceNumber, booking, order);
   await supabase.from("bookings").update({
+    ...(booking.status === "accepted" ? { status: "confirmed" } : {}),
     payment_status: "paid",
     payment_id: order.id,
     payment_provider: "cashfree",
@@ -181,6 +183,29 @@ async function markPaid(supabase: any, order: any, now: string) {
       title: "Payment confirmed and invoice ready",
       body: `${booking.pooja_name || order.pooja_slug || "Ceremony"} · ${invoiceNumber} · ₹${(Number(order.amount_paise) / 100).toLocaleString("en-IN")}`,
     }).then(() => undefined, () => undefined);
+    const amount = formatInr(Number(order.amount_paise) / 100);
+    const when = `${booking.booking_date} ${String(booking.booking_time || "").slice(0, 5)}`.trim();
+    const awaitingPriest = booking.status === "pending";
+    await Promise.all([
+      notifyUsers(supabase, {
+        userIds: [await priestUserId(supabase, order.priest_id)],
+        type: awaitingPriest ? "booking_request" : "payment_confirmed",
+        title: awaitingPriest ? `New paid booking: ${booking.pooja_name || "Ceremony"}` : `Booking confirmed: ${booking.pooja_name || "Ceremony"}`,
+        body: awaitingPriest
+          ? `${booking.customer_name || "A customer"} paid ${amount} for ${when}. Accept or decline it.`
+          : `${booking.customer_name || "The customer"} paid ${amount}. ${when}`,
+        bookingId: booking.id,
+      }),
+      notifyUsers(supabase, {
+        userIds: [order.customer_id],
+        type: "payment_confirmed",
+        title: awaitingPriest ? "Payment received" : "Payment received, booking confirmed",
+        body: awaitingPriest
+          ? `Waiting for ${booking.priest_name || "the Purohit"} to accept. You get a full refund if they decline.`
+          : `${booking.pooja_name || "Ceremony"} with ${booking.priest_name || "your Purohit"} · ${when}`,
+        bookingId: booking.id,
+      }),
+    ]);
   }
 }
 

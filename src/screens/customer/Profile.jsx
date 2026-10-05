@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { bindBrandStyles } from "../../lib/brandStyles";
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from "react-native";
-import { Bell, ChevronRight, CircleHelp, Languages, LogOut, MapPin, Palette, ShieldCheck, Smartphone, Star, UserRound, WalletCards, BriefcaseBusiness, CalendarDays, Phone, X } from "lucide-react-native";
+import { Bell, ChevronRight, CircleHelp, Languages, LogOut, MapPin, Palette, ShieldCheck, Smartphone, Star, UserRound, WalletCards, BriefcaseBusiness, CalendarDays, Phone, X, IndianRupee } from "lucide-react-native";
 import { colors, font } from "../../lib/theme";
 import { Avatar, PageHeader } from "../../components/ProductUI";
 import { useI18n } from "../../lib/i18n";
@@ -12,7 +12,7 @@ import { APPEARANCE_PRESETS, BUTTON_SHAPES, useAppearance } from "../../lib/appe
 export default function Profile({ navigation }) {
   const { t } = useI18n();
   const { user, logout, updateProfile } = useAuth();
-  const { language, area, notificationsEnabled } = usePreferences();
+  const { language, setLanguage, area, notificationsEnabled } = usePreferences();
   const { appearance } = useAppearance();
   const paletteLabel = APPEARANCE_PRESETS.find((item) => item.id === appearance.preset)?.label || "Custom";
   const shapeLabel = BUTTON_SHAPES.find((item) => item.id === appearance.buttonShape)?.label || "Pill";
@@ -51,9 +51,9 @@ export default function Profile({ navigation }) {
   };
 
   const rows = [
+    ...(priest ? [{ icon: IndianRupee, title: "Pooja rate card", value: "Edit prices", onPress: () => navigation.navigate("RateCard") }] : []),
     { icon: Smartphone, title: "Mobile number", value: user.phone ? `+91 ${user.phone}` : "Add number", onPress: openEdit },
     { icon: Palette, title: "Appearance", value: `${paletteLabel} · ${shapeLabel}`, onPress: () => navigation.navigate("Settings", { section: "appearance" }) },
-    { icon: Languages, title: "Language", value: language === "kn" ? "Kannada" : "English", onPress: () => navigation.navigate("Settings", { section: "language" }) },
     { icon: MapPin, title: "Service location", value: `${area.name}, Bengaluru`, onPress: () => navigation.navigate("Settings", { section: "location" }) },
     { icon: Bell, title: "Notifications", value: notificationsEnabled ? "On" : "Off", onPress: () => navigation.navigate("Settings", { section: "notifications" }) },
     { icon: Smartphone, title: "Signed-in devices", value: "View", onPress: () => navigation.navigate("Settings", { section: "devices" }) },
@@ -145,6 +145,24 @@ export default function Profile({ navigation }) {
 
         <Text style={styles.sectionTitle}>Account settings</Text>
         <View style={styles.settings}>
+          <View style={styles.settingRow}>
+            <Languages size={19} color={colors.ink} />
+            <Text style={styles.settingTitle}>{language === "kn" ? "ಭಾಷೆ" : "Language"}</Text>
+            <View style={styles.langToggle}>
+              {[["en", "English"], ["kn", "ಕನ್ನಡ"]].map(([code, label]) => (
+                <Pressable
+                  key={code}
+                  testID={`profile-language-${code}`}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: language === code }}
+                  onPress={() => language !== code && setLanguage(code)}
+                  style={[styles.langOption, language === code && styles.langOptionActive]}
+                >
+                  <Text style={[styles.langOptionText, language === code && styles.langOptionTextActive]}>{label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
           {rows.map((row) => (
             <SettingRow key={row.title} {...row} />
           ))}
@@ -289,6 +307,11 @@ const styles = bindBrandStyles({
   settingRow: { minHeight: 64, flexDirection: "row", alignItems: "center", gap: 13, borderBottomWidth: 1, borderColor: colors.warmBorder, paddingHorizontal: 2 },
   settingTitle: { flex: 1, color: colors.ink, fontFamily: font.medium, fontSize: 14 },
   settingValue: { color: colors.muted2, fontSize: 11 },
+  langToggle: { flexDirection: "row", padding: 3, borderRadius: 18, backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.warmBorder },
+  langOption: { minWidth: 64, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 15, alignItems: "center" },
+  langOptionActive: { backgroundColor: colors.brandBrown },
+  langOptionText: { color: colors.ink, fontFamily: font.semibold, fontSize: 12 },
+  langOptionTextActive: { color: colors.white },
   rowPressed: { backgroundColor: colors.muted },
   logout: { minHeight: 54, marginTop: 24, flexDirection: "row", alignItems: "center", gap: 11, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.warmBorder },
   logoutText: { color: colors.brandBrown, fontFamily: font.semibold, fontSize: 14 },

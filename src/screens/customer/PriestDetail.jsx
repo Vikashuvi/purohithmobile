@@ -1,20 +1,28 @@
 import React, { useEffect, useState } from "react";
 import { bindBrandStyles } from "../../lib/brandStyles";
-import { View, Text, ScrollView, Image, ActivityIndicator, useWindowDimensions } from "react-native";
-import { Star, ShieldCheck, Languages, MapPin, Clock3, Send } from "lucide-react-native";
+import { View, Text, ScrollView, Image, ActivityIndicator, Pressable, useWindowDimensions } from "react-native";
+import { Star, ShieldCheck, Languages, MapPin, Clock3, Send, IndianRupee, ChevronRight } from "lucide-react-native";
 import { colors, spacing, font } from "../../lib/theme";
 import { Button, Card } from "../../components/UI";
 import { useI18n } from "../../lib/i18n";
 import api, { API_URL } from "../../lib/api";
-import { fetchMarketplaceProfile } from "../../lib/marketplace";
+import { fetchMarketplacePoojas, fetchMarketplaceProfile } from "../../lib/marketplace";
 
 export default function PriestDetail({ route, navigation }) {
   const { priestId, poojaSlug } = route.params || {};
   const { t, language } = useI18n();
   const [priest, setPriest] = useState(null);
   const [reviews, setReviews] = useState([]);
+  const [poojaNames, setPoojaNames] = useState({});
   const { width } = useWindowDimensions();
   const desktop = width >= 860;
+  const narrow = width < 430;
+
+  useEffect(() => {
+    fetchMarketplacePoojas()
+      .then(({ poojas }) => setPoojaNames(Object.fromEntries((poojas || []).map((item) => [item.slug, item.name]))))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     fetchMarketplaceProfile(priestId).then((data) => {
@@ -39,8 +47,13 @@ export default function PriestDetail({ route, navigation }) {
     ? poojaSlug
     : (priest.services?.[0]?.pooja_slug || (priest.pooja_slugs && priest.pooja_slugs[0]) || normalizePoojaSlug(specialties[0]) || "satyanarayan");
   const serviceAreas = priest.areas || priest.service_areas || [];
-  const starting = priest.starting_price_inr || 100;
-  const maxPrice = priest.max_price_inr || 80000;
+  const rateCard = (priest.services || [])
+    .filter((service) => Number(service.price_inr) > 0)
+    .sort((a, b) => Number(a.price_inr) - Number(b.price_inr));
+  const servicePrices = rateCard.map((service) => Number(service.price_inr));
+  const starting = servicePrices.length ? Math.min(...servicePrices) : priest.starting_price_inr || 100;
+  const maxPrice = servicePrices.length ? Math.max(...servicePrices) : priest.max_price_inr || 80000;
+  const poojaLabel = (slug) => poojaNames[slug] || labelFromSlug(slug);
   const portrait = priest.photo_url ? { uri: priest.photo_url.startsWith("http") ? priest.photo_url : `${API_URL}${priest.photo_url}` } : require("../../../assets/images/purohithconnect-logo.png");
   const portfolio = (priest.portfolio || priest.portfolio_urls || []).map((item) => typeof item === "string" ? { uri: item.startsWith("http") ? item : `${API_URL}${item}` } : item);
 
@@ -86,6 +99,33 @@ export default function PriestDetail({ route, navigation }) {
           <Text style={styles.body}>{serviceAreas.join(" · ") || "—"}</Text>
         </View>
 
+        <View style={styles.sectionBlock}>
+          <View style={styles.rateHead}>
+            <View style={styles.detailTitle}><IndianRupee size={16} color={colors.ink} /><Text style={styles.section}>{language === "kn" ? "ದರ ಪಟ್ಟಿ" : "Rate card"}</Text></View>
+            {rateCard.length ? <Text style={styles.rateHint}>Inclusive of GST</Text> : null}
+          </View>
+          {rateCard.length ? rateCard.map((service, index) => (
+            <Pressable
+              key={service.pooja_slug}
+              testID={`rate-${service.pooja_slug}`}
+              onPress={() => navigation.navigate("Booking", { priestId, poojaSlug: service.pooja_slug })}
+              style={({ pressed }) => [styles.rateRow, index === rateCard.length - 1 && styles.rateRowLast, pressed && styles.rateRowPressed]}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.rateName}>{poojaLabel(service.pooja_slug)}</Text>
+                <Text style={styles.rateMeta}>
+                  {[service.duration_minutes ? formatDuration(service.duration_minutes) : null, service.includes_samagri ? "Samagri included" : "Samagri not included"].filter(Boolean).join(" · ")}
+                </Text>
+                {service.description ? <Text style={styles.rateNote} numberOfLines={2}>{service.description}</Text> : null}
+              </View>
+              <Text style={styles.ratePrice}>₹{Number(service.price_inr).toLocaleString("en-IN")}</Text>
+              <ChevronRight size={16} color={colors.muted2} />
+            </Pressable>
+          )) : (
+            <Text style={styles.body}>This purohit has not published ceremony prices yet. Request proposals to get a quote.</Text>
+          )}
+        </View>
+
         <Text style={[styles.section, { marginTop: spacing.xl, marginHorizontal: spacing.lg }]}>{language === "kn" ? "ವಿಮರ್ಶೆಗಳು" : "Reviews"} ({reviews.length})</Text>
         {reviews.slice(0, 5).map((r) => (
           <Card key={r.id} style={{ marginTop: spacing.sm, marginHorizontal: spacing.lg }}>
@@ -101,13 +141,15 @@ export default function PriestDetail({ route, navigation }) {
           testID="book-now-btn"
           title={t.bookNow}
           onPress={() => navigation.navigate("Booking", { priestId, poojaSlug: defaultPoojaSlug })}
+          compact={narrow}
           style={styles.stickyPrimary}
         />
         <Button
           testID="request-profile-proposal-btn"
           title="Request proposals"
           variant="outline"
-          icon={Send}
+          icon={narrow ? undefined : Send}
+          compact={narrow}
           onPress={() => navigation.navigate("RequestPooja", { poojaSlug: defaultPoojaSlug, poojaName: labelFromSlug(defaultPoojaSlug) })}
           style={styles.stickySecondary}
         />
@@ -129,6 +171,14 @@ function normalizePoojaSlug(value) {
   if (text.includes("namakar")) return "namakarna";
   if (text.includes("vivaha")) return "vivaha";
   return text.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function formatDuration(minutes) {
+  const total = Number(minutes);
+  const hours = Math.floor(total / 60);
+  const rest = total % 60;
+  if (!hours) return `${rest} min`;
+  return rest ? `${hours} hr ${rest} min` : `${hours} hr`;
 }
 
 function labelFromSlug(slug) {
@@ -179,5 +229,14 @@ const styles = bindBrandStyles({
     flexDirection: "row", gap: 10, justifyContent: "center",
   },
   stickyPrimary: { flex: 1, maxWidth: 340 },
-  stickySecondary: { flex: 1, maxWidth: 260 },
+  stickySecondary: { flex: 1.25, maxWidth: 260 },
+  rateHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 4 },
+  rateHint: { color: colors.muted2, fontSize: 10, marginBottom: 6 },
+  rateRow: { minHeight: 62, flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 11, borderBottomWidth: 1, borderColor: colors.warmBorder },
+  rateRowLast: { borderBottomWidth: 0 },
+  rateRowPressed: { opacity: 0.7 },
+  rateName: { color: colors.ink, fontSize: 14, fontWeight: "700" },
+  rateMeta: { color: colors.muted2, fontSize: 11, marginTop: 3 },
+  rateNote: { color: colors.muted2, fontSize: 11, lineHeight: 15, marginTop: 3 },
+  ratePrice: { color: colors.saffronDark, fontSize: 15, fontWeight: "800" },
 });

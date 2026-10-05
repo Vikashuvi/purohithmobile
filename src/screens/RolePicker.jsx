@@ -1,18 +1,22 @@
 import React from "react";
 import { bindBrandStyles } from "../lib/brandStyles";
-import { View, Text, StyleSheet, Pressable, SafeAreaView, Image, useWindowDimensions } from "react-native";
+import { View, Text, StyleSheet, Pressable, SafeAreaView, Image, Platform, useWindowDimensions } from "react-native";
 import { ArrowRight, House, BookOpen, Sparkles, ShieldCheck } from "lucide-react-native";
 import { colors, radii, spacing } from "../lib/theme";
 import { useI18n } from "../lib/i18n";
 import { useAuth } from "../lib/auth";
 import { spiritualTap } from "../lib/spiritualSounds";
 import BrandLogo from "../components/BrandLogo";
+import { useRolePickerBanner } from "../lib/banner";
+
+const DEFAULT_HERO = require("../../assets/images/ritual-home-hero.png");
 
 export default function RolePicker() {
   const { width } = useWindowDimensions();
   const desktop = width >= 900;
   const { t } = useI18n();
   const { setRole } = useAuth();
+  const banner = useRolePickerBanner();
   const pick = async (role) => {
     spiritualTap();
     await setRole(role);
@@ -26,11 +30,11 @@ export default function RolePicker() {
   </View>;
 
   const hero = <View style={[styles.hero, desktop && styles.heroDesktop]}>
-    <Image source={require("../../assets/images/ritual-home-hero.png")} style={styles.heroImage} />
+    <Image source={banner.imageUrl ? { uri: banner.imageUrl } : DEFAULT_HERO} defaultSource={Platform.OS === "web" ? undefined : DEFAULT_HERO} style={styles.heroImage} />
     <View style={styles.heroShade} />
     <View style={styles.heroCopy}>
-      <View style={styles.verified}><Sparkles size={14} color={colors.white} /><Text style={styles.verifiedText}>THE TRUSTED WAY TO BEGIN</Text></View>
-      <Text style={[styles.heroTitle, desktop && styles.heroTitleDesktop]}>Your shubh karya,{"\n"}handled with care.</Text>
+      <View style={styles.verified}><Sparkles size={14} color={colors.white} /><Text style={styles.verifiedText}>{banner.badge.toUpperCase()}</Text></View>
+      <Text style={[styles.heroTitle, desktop && styles.heroTitleDesktop]}>{banner.title}</Text>
     </View>
   </View>;
 

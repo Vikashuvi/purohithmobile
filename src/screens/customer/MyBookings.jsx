@@ -6,7 +6,7 @@ import { colors, radii, spacing, font } from "../../lib/theme";
 import { Button, Field } from "../../components/UI";
 import { EmptyState, StatusBadge } from "../../components/ProductUI";
 import api from "../../lib/api";
-import { downloadInvoice, listBookings, listCustomerRequests, listPaymentReports } from "../../lib/payments";
+import { downloadInvoice, listBookings, listCustomerRequests, listPaymentReports, payForBooking } from "../../lib/payments";
 import { useI18n } from "../../lib/i18n";
 import { useAuth } from "../../lib/auth";
 import { startInAppCall } from "../../lib/calls";
@@ -30,6 +30,14 @@ const getDemoCustomerBooking = () => ({ id: "demo-confirmed", demo: true, status
 const getDemoCustomerRequests = () => [
   { id: "demo-req-1", pooja_name: "Griha Pravesh Puja", ceremony_date: futureDate(3), ceremony_time: "09:00", address: "Indiranagar, Bengaluru", proposal_count: 2, status: "open", budget_min_inr: 3500, budget_max_inr: 6500 },
 ];
+
+function bookingStatusLabel(booking) {
+  if (booking.payment_status === "refunded") return "refunded";
+  if (booking.payment_status === "refund_pending") return "refund in progress";
+  if (booking.status === "pending") return booking.payment_status === "paid" ? "awaiting purohit" : "waiting for purohit";
+  if (booking.status === "accepted") return "accepted · pay now";
+  return booking.status;
+}
 
 function upcomingDates(days = 14) {
   const out = [];
@@ -57,6 +65,7 @@ export default function MyBookings({ navigation }) {
   const [reviewTarget, setReviewTarget] = useState(null);
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
+  const [payingId, setPayingId] = useState(null);
 
   const load = useCallback(async () => {
     if (user?.demo) {
@@ -122,6 +131,20 @@ export default function MyBookings({ navigation }) {
     if (!report?.invoice_html) return Alert.alert("Invoice pending", "The invoice will appear after Cashfree confirms the payment.");
     try { await downloadInvoice(report.invoice_html, report.invoice_number); }
     catch (error) { Alert.alert("Invoice unavailable", error?.message || "Please try again."); }
+  };
+
+  const payNow = async (b) => {
+    setPayingId(b.id);
+    try {
+      const verified = await payForBooking(b.id);
+      if (verified.order?.status === "paid") Alert.alert("Booking confirmed", `Payment received. ${b.priest_name || "Your Purohit"} will see you on ${b.booking_date}.`);
+      else Alert.alert("Payment pending", "Cashfree has not confirmed this payment yet. Pull down to refresh in a moment, or tap Pay now again.");
+    } catch (error) {
+      Alert.alert("Payment failed", error?.message || "Please try again.");
+    } finally {
+      setPayingId(null);
+      load();
+    }
   };
 
   const openProposalComparison = (req) => {
@@ -267,14 +290,15 @@ export default function MyBookings({ navigation }) {
           const total = b.total_amount || b.price;
           const canReschedule = ["pending", "confirmed"].includes(b.status);
           const canCancel = ["pending", "confirmed"].includes(b.status);
-          const pillStatus = b.payment_status === "refunded" ? "refunded" : b.status;
+          const awaitingPayment = b.status === "accepted" && b.payment_status !== "paid";
+          const pillStatus = bookingStatusLabel(b);
           return (
             <View testID={`booking-${b.id}`} style={styles.bookingCard}>
               <Image source={require("../../../assets/images/ritual-home-hero.png")} style={styles.bookingImage} />
               <View style={styles.bookingBody}>
               <View style={styles.bookingTop}>
                 <View style={{ flex: 1 }}><Text style={styles.title}>{b.pooja_name}</Text><Text style={styles.meta}>with {b.priest_name}</Text></View>
-                <StatusBadge label={pillStatus} tone={pillStatus === "confirmed" ? "neutral" : pillStatus === "completed" ? "success" : pillStatus === "cancelled" ? "danger" : "accent"} />
+                <StatusBadge label={pillStatus} tone={pillStatus === "confirmed" ? "neutral" : pillStatus === "completed" ? "success" : ["cancelled", "rejected"].includes(pillStatus) ? "danger" : "accent"} />
               </View>
               <View style={styles.detailRow}><CalendarDays size={15} color={colors.ink} /><Text style={styles.detailText}>{b.booking_date} · {b.booking_time}</Text></View>
               <View style={styles.detailRow}><MapPin size={15} color={colors.ink} /><Text style={styles.detailText} numberOfLines={1}>{b.address}</Text></View>
@@ -288,6 +312,9 @@ export default function MyBookings({ navigation }) {
                   <Text style={{ color: colors.info, fontSize: font.sizes.xs }}>Refunded ₹{(b.refund_amount || 0).toLocaleString("en-IN")}</Text>
                 )}
               </View>
+              {b.status === "pending" && b.payment_status !== "paid" ? <Text style={styles.flowHint}>Waiting for {b.priest_name || "the Purohit"} to accept. You’ll pay only after they accept.</Text> : null}
+              {b.status === "rejected" ? <Text style={[styles.flowHint, { color: colors.danger }]}>{b.priest_name || "The Purohit"} declined this request.{b.rejected_reason ? ` "${b.rejected_reason}"` : ""}</Text> : null}
+              {awaitingPayment ? <Button testID={`pay-btn-${b.id}`} title={payingId === b.id ? "Opening secure checkout…" : `Pay ₹${Number(total || 0).toLocaleString("en-IN")} to confirm`} onPress={() => payNow(b)} disabled={!!payingId} style={{ marginTop: 14 }} /> : null}
               {b.status === "confirmed" || b.payment_status === "paid" ? <View style={styles.primaryActions}>
                 {b.status === "confirmed" ? <Pressable testID={`track-btn-${b.id}`} onPress={() => navigation.navigate("TrackPriest", { booking: b })} style={styles.trackAction}><LocateFixed size={17} color={colors.white} /><Text style={styles.trackActionText}>Track purohit</Text><ChevronRight size={16} color={colors.white} /></Pressable> : null}
                 <Pressable testID={`message-btn-${b.id}`} accessibilityLabel="Message purohit" onPress={() => navigation.navigate("Conversation", { bookingId: b.id, priestName: b.priest_name, customerName: b.customer_name, poojaName: b.pooja_name })} style={styles.roundAction}><MessageSquareText size={17} color={colors.ink} /></Pressable>
@@ -455,6 +482,7 @@ const styles = bindBrandStyles({
   detailText: { flex: 1, fontSize: 12, color: colors.muted2 },
   metaSmall: { fontSize: 11, color: colors.muted2, marginTop: 4 },
   priceRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 15 },
+  flowHint: { color: colors.muted2, fontSize: 12, lineHeight: 17, marginTop: 10 },
   price: { color: colors.ink, fontWeight: "700", fontSize: 17 },
   primaryActions: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 16 },
   trackAction: { flex: 1, minHeight: 46, borderRadius: 23, backgroundColor: colors.brandBrown, paddingHorizontal: 15, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 },

@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { bindBrandStyles } from "../lib/brandStyles";
 import { Modal, Pressable, ScrollView, Text, View } from "react-native";
-import { Check, ChevronDown, MapPin, X } from "lucide-react-native";
+import { Bell, Check, ChevronDown, MapPin, X } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { colors, spacing } from "../lib/theme";
@@ -9,14 +9,16 @@ import { useAppearance } from "../lib/appearance";
 import { usePreferences } from "../lib/preferences";
 import { useAuth } from "../lib/auth";
 import BrandLogo from "./BrandLogo";
+import { useUnreadNotifications } from "../lib/inbox";
 
 export default function AppTopBar({ showLocation = true }) {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const { user } = useAuth();
-  const { language, area, setArea, areas } = usePreferences();
+  const { area, setArea, areas } = usePreferences();
   const { tokens } = useAppearance();
   const [open, setOpen] = useState(false);
+  const { count: unread } = useUnreadNotifications(user?.id);
 
   const isPriest = user?.role === "priest";
   const topInset = Math.max(insets.top, 12);
@@ -43,10 +45,11 @@ export default function AppTopBar({ showLocation = true }) {
             <ChevronDown size={13} color={colors.muted2} />
           </Pressable>
         ) : <View style={{ flex: 1 }} />}
-        <View style={styles.sideSlotRight}>
-          <Pressable accessibilityLabel="Language settings" onPress={() => navigation.navigate("Settings", { section: "language" })} style={[styles.language, { backgroundColor: tokens.softBg, borderColor: tokens.primary }]}>
-            <Text style={[styles.languageText, { color: tokens.primary }]}>{language === "kn" ? "KN" : "EN"}</Text>
-          </Pressable>
+        <View style={[styles.sideSlotRight, styles.rightActions]}>
+          {user ? <Pressable testID="notifications-bell" accessibilityLabel={unread ? `Notifications, ${unread} unread` : "Notifications"} onPress={() => navigation.navigate("Notifications")} style={styles.bell} hitSlop={6}>
+            <Bell size={19} color={colors.ink} />
+            {unread ? <View style={[styles.bellBadge, { backgroundColor: tokens.accent }]}><Text style={styles.bellBadgeText}>{unread > 9 ? "9+" : unread}</Text></View> : null}
+          </Pressable> : null}
         </View>
       </View>
     </View>
@@ -95,14 +98,16 @@ const styles = bindBrandStyles({
   bar: { width: "100%", maxWidth: 1180, height: 54, alignSelf: "center", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg },
   sideSlotLeft: { minWidth: 44, alignItems: "flex-start", justifyContent: "center" },
   sideSlotRight: { minWidth: 44, alignItems: "flex-end", justifyContent: "center" },
+  rightActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  bell: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.warmBorder, backgroundColor: colors.white },
+  bellBadge: { position: "absolute", top: -3, right: -4, minWidth: 17, height: 17, borderRadius: 9, paddingHorizontal: 4, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: colors.white },
+  bellBadgeText: { color: colors.white, fontSize: 9, fontWeight: "800" },
   brandWrap: { alignItems: "center", justifyContent: "center" },
   centerLocation: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingHorizontal: 6 },
   locationCopy: { alignItems: "center", justifyContent: "center" },
   pinTile: { width: 30, height: 30, borderRadius: 8, backgroundColor: "#FFF2EC", alignItems: "center", justifyContent: "center" },
   label: { fontSize: 8, color: colors.muted2, fontWeight: "600", letterSpacing: .5, textAlign: "center" },
   value: { fontSize: 13, color: colors.ink, fontWeight: "700", marginTop: 1, textAlign: "center" },
-  language: { width: 36, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", backgroundColor: colors.brandTint, borderWidth: 1, borderColor: "#E8C2CA" },
-  languageText: { color: colors.brandBrown, fontSize: 10, fontWeight: "800" },
   overlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,.45)" },
   dismissArea: { flex: 1 },
   sheet: { maxHeight: "80%", backgroundColor: colors.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: spacing.lg },

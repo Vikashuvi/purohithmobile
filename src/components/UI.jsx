@@ -5,7 +5,7 @@ import { colors, radii, font, spacing } from "../lib/theme";
 import { spiritualTap } from "../lib/spiritualSounds";
 import { useAppearance } from "../lib/appearance";
 
-export function Button({ title, onPress, variant = "primary", disabled, loading, testID, style, icon: Icon }) {
+export function Button({ title, onPress, variant = "primary", disabled, loading, testID, style, icon: Icon, compact }) {
   const { tokens } = useAppearance();
   const press = useRef(new Animated.Value(0)).current;
   const themed = variant === "primary" || variant === "outline" || variant === "ghost";
@@ -38,7 +38,11 @@ export function Button({ title, onPress, variant = "primary", disabled, loading,
         marginBottom: extra.marginBottom,
         marginLeft: extra.marginLeft,
         marginRight: extra.marginRight,
-        padding: "0 20px",
+        flex: extra.flex,
+        maxWidth: extra.maxWidth,
+        minWidth: 0,
+        whiteSpace: "nowrap",
+        padding: compact ? "0 12px" : "0 20px",
         borderRadius: radius,
         border: variant === "outline" ? `1px solid ${tokens.primary}` : variant === "primary" && tokens.buttonStyle !== "solid" ? `1px solid ${tokens.primaryBorder}` : "1px solid transparent",
         background: bg,
@@ -53,7 +57,7 @@ export function Button({ title, onPress, variant = "primary", disabled, loading,
         fontWeight: 700,
         boxShadow: dimensional ? `0 4px 9px ${variant === "danger" ? "#7F1D1D33" : `${tokens.primary}33`}` : "none",
       }}
-    >{loading ? "Loading..." : <>{Icon ? <Icon size={18} color={fg} strokeWidth={2.2} /> : null}<span>{title}</span></>}</div>;
+    >{loading ? "Loading..." : <>{Icon ? <Icon size={18} color={fg} strokeWidth={2.2} /> : null}<span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span></>}</div>;
   }
   return (
     <Animated.View style={[animatedStyle, style]}><Pressable
@@ -64,10 +68,10 @@ export function Button({ title, onPress, variant = "primary", disabled, loading,
       onPressIn={() => animate(1)}
       onPressOut={() => animate(0)}
       disabled={disabled || loading}
-      style={({ pressed }) => [styles.btn, dimensional && styles.dimensional, variant === "danger" && styles.dangerDepth, { backgroundColor: bg, borderRadius: radius, opacity: pressed ? 0.9 : 1 }, pressed && dimensional && styles.dimensionalPressed, border]}>
+      style={({ pressed }) => [styles.btn, compact && styles.btnCompact, dimensional && styles.dimensional, variant === "danger" && styles.dangerDepth, { backgroundColor: bg, borderRadius: radius, opacity: pressed ? 0.9 : 1 }, pressed && dimensional && styles.dimensionalPressed, border]}>
       {loading ? <ActivityIndicator color={fg} /> : <>
         {Icon ? <Icon size={18} color={fg} strokeWidth={2.2} /> : null}
-        <Text style={[styles.btnTxt, { color: fg }]}>{title}</Text>
+        <Text style={[styles.btnTxt, { color: fg }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{title}</Text>
       </>}
     </Pressable></Animated.View>
   );
@@ -120,10 +124,11 @@ const styles = bindBrandStyles({
     minHeight: 52, borderRadius: radii.md, alignItems: "center", justifyContent: "center", paddingHorizontal: 20,
     flexDirection: "row", gap: 9,
   },
+  btnCompact: { paddingHorizontal: 12, gap: 6 },
   dimensional: { shadowColor: colors.brandBrownDark, shadowOpacity: .2, shadowRadius: 9, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
   dangerDepth: { shadowColor: "#7F1D1D" },
   dimensionalPressed: { shadowOpacity: .03, elevation: 1 },
-  btnTxt: { fontSize: font.sizes.base, fontWeight: "700" },
+  btnTxt: { fontSize: font.sizes.base, fontWeight: "700", flexShrink: 1 },
   card: {
     backgroundColor: colors.white, borderRadius: radii.md, padding: spacing.lg,
     borderWidth: 1, borderColor: colors.warmBorder,

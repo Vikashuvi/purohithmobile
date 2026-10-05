@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-application-name",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -47,6 +47,7 @@ Deno.serve(async (req) => {
       let profileQuery = supabase.from("priest_profiles")
         .select("id,user_id,slug,display_name,profile_headline,bio,years_experience,languages,service_areas,pooja_slugs,photo_url,portfolio_urls,verification_status,rating,review_count,tradition,availability_notes,starting_price_inr,max_price_inr,primary_service_area")
         .eq("verification_status", "verified")
+        .eq("is_listed", true)
         .not("photo_url", "is", null)
         .not("submitted_at", "is", null);
       profileQuery = priestId ? profileQuery.eq("id", priestId) : profileQuery.eq("slug", priestSlug);
@@ -54,7 +55,7 @@ Deno.serve(async (req) => {
       if (error) throw error;
       if (!data) return json({ error: "Profile not found" }, 404);
       const { data: services, error: servicesError } = await supabase.from("priest_services")
-        .select("pooja_slug,price_paise,duration_minutes,is_active")
+        .select("pooja_slug,price_paise,duration_minutes,includes_samagri,description,is_active")
         .eq("priest_id", data.id)
         .eq("is_active", true)
         .order("price_paise", { ascending: true });
@@ -72,6 +73,8 @@ Deno.serve(async (req) => {
             pooja_slug: service.pooja_slug,
             price_inr: Number(service.price_paise || 0) / 100,
             duration_minutes: service.duration_minutes,
+            includes_samagri: Boolean(service.includes_samagri),
+            description: service.description || "",
           })),
           reviews: reviews || [],
         },
@@ -88,13 +91,15 @@ Deno.serve(async (req) => {
     let query = supabase.from("priest_profiles")
       .select("id,user_id,slug,display_name,profile_headline,bio,years_experience,languages,service_areas,pooja_slugs,photo_url,portfolio_urls,verification_status,rating,review_count,tradition,availability_notes,starting_price_inr,max_price_inr,primary_service_area")
       .eq("verification_status", "verified")
+      .eq("is_listed", true)
       .not("photo_url", "is", null)
       .not("submitted_at", "is", null)
       .order("rating", { ascending: false })
       .limit(200);
 
     if (poojaSlug) query = query.contains("pooja_slugs", [poojaSlug]);
-    if (area && area !== "All") query = query.contains("service_areas", [area]);
+    // Bengaluru is the umbrella marketplace location; profiles list its neighborhoods.
+    if (area && area !== "All" && area !== "Bengaluru") query = query.contains("service_areas", [area]);
     if (language && language !== "All") query = query.contains("languages", [language]);
     if (minPrice > 0) query = query.gte("max_price_inr", minPrice);
     if (maxPrice > 0) query = query.lte("starting_price_inr", maxPrice);

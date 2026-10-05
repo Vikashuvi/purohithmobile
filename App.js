@@ -19,6 +19,7 @@ import AppTopBar from "./src/components/AppTopBar";
 import BrandLogo from "./src/components/BrandLogo";
 import DAPWidget from "./src/components/DAPWidget";
 import IncomingCall from "./src/components/IncomingCall";
+import NotificationBridge from "./src/components/NotificationBridge";
 import LoadingScreen from "./src/components/LoadingScreen";
 import RolePicker from "./src/screens/RolePicker";
 import Login from "./src/screens/Login";
@@ -37,10 +38,12 @@ import PriestOnboarding from "./src/screens/priest/Onboarding";
 import Chat from "./src/screens/customer/Chat";
 import TrackPriest from "./src/screens/customer/TrackPriest";
 import ShareLocation from "./src/screens/priest/ShareLocation";
+import RateCard from "./src/screens/priest/RateCard";
 import Conversation from "./src/screens/Conversation";
 import CallRoom from "./src/screens/CallRoom";
 import Inbox from "./src/screens/Inbox";
 import Settings from "./src/screens/Settings";
+import Notifications from "./src/screens/Notifications";
 import { startMobileSession, trackMobileEvent } from "./src/lib/supabase";
 
 const RootStack = createNativeStackNavigator();
@@ -270,6 +273,7 @@ function Router() {
             <RootStack.Screen name="Conversation" component={Conversation} options={{ headerShown: false }} />
             <RootStack.Screen name="CallRoom" component={CallRoom} options={{ headerShown: false }} />
             <RootStack.Screen name="Settings" component={Settings} options={{ headerShown: true, title: "Settings" }} />
+            <RootStack.Screen name="Notifications" component={Notifications} options={{ headerShown: true, title: "Notifications" }} />
           </>
         )}
         {user && user.role === "priest" && user.onboardingRequired && (
@@ -280,9 +284,11 @@ function Router() {
             <RootStack.Screen name="Tabs" component={PriestTabs} />
             <RootStack.Screen name="PriestOnboarding" component={PriestOnboarding} options={{ headerShown: true, title: "Profile" }} />
             <RootStack.Screen name="ShareLocation" component={ShareLocation} options={{ headerShown: true, title: "Share location" }} />
+            <RootStack.Screen name="RateCard" component={RateCard} options={{ headerShown: true, title: "Pooja rate card" }} />
             <RootStack.Screen name="Conversation" component={Conversation} options={{ headerShown: false }} />
             <RootStack.Screen name="CallRoom" component={CallRoom} options={{ headerShown: false }} />
             <RootStack.Screen name="Settings" component={Settings} options={{ headerShown: true, title: "Settings" }} />
+            <RootStack.Screen name="Notifications" component={Notifications} options={{ headerShown: true, title: "Notifications" }} />
           </>
         )}
       </RootStack.Navigator>
@@ -291,6 +297,9 @@ function Router() {
       </WidgetBoundary>
       <WidgetBoundary>
         <IncomingCall navigationRef={navigationRef} />
+      </WidgetBoundary>
+      <WidgetBoundary>
+        <NotificationBridge navigationRef={navigationRef} />
       </WidgetBoundary>
     </NavigationContainer>
   );

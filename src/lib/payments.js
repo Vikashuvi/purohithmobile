@@ -3,7 +3,8 @@ import * as ImagePicker from "expo-image-picker";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { supabase, supabaseConfig } from "./supabase";
-export { openCashfreeCheckout } from "./cashfreeCheckout";
+import { openCashfreeCheckout } from "./cashfreeCheckout";
+export { openCashfreeCheckout };
 
 export const PUROHITH_UPI_ID = "sgmsfreshmindsservicesllp.8050934625.ibz@icici";
 export const PUROHITH_PAYEE_NAME = "SGMS Freshminds Services LLP";
@@ -228,8 +229,14 @@ export async function sendProviderProposal(payload) {
   }
 }
 
-export async function createDirectBookingPayment(payload) {
-  return createCashfreeOrder(payload);
+export async function createBookingRequest(payload) {
+  return invokePaymentWorkflow({ action: "create_booking_request", ...payload });
+}
+
+export async function payForBooking(bookingId) {
+  const data = await createCashfreeOrder({ booking_id: bookingId });
+  await openCashfreeCheckout(data.order);
+  return verifyCashfreeOrder({ payment_order_id: data.order.id });
 }
 
 export async function createCashfreeOrder(payload) {

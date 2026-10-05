@@ -198,14 +198,33 @@ export default function PriestOnboarding() {
 
       const { data: profileRecord } = await supabase.from("priest_profiles").select("id").eq("user_id", user.id).maybeSingle();
       if (profileRecord?.id && poojas.size > 0) {
-        const serviceRows = Array.from(poojas).map((slug) => ({
+        const selected = Array.from(poojas);
+        const { data: existing, error: existingError } = await supabase.from("priest_services")
+          .select("pooja_slug,is_active")
+          .eq("priest_id", profileRecord.id);
+        if (existingError) throw existingError;
+        const existingSlugs = new Set((existing || []).map((row) => row.pooja_slug));
+        const newRows = selected.filter((slug) => !existingSlugs.has(slug)).map((slug) => ({
           priest_id: profileRecord.id,
           pooja_slug: slug,
           price_paise: Math.max(startingValue || 100, 100) * 100,
           is_active: true,
           updated_at: now,
         }));
-        await supabase.from("priest_services").upsert(serviceRows, { onConflict: "priest_id,pooja_slug" });
+        const reactivate = (existing || []).filter((row) => !row.is_active && poojas.has(row.pooja_slug)).map((row) => row.pooja_slug);
+        const deactivate = (existing || []).filter((row) => row.is_active && !poojas.has(row.pooja_slug)).map((row) => row.pooja_slug);
+        if (newRows.length) {
+          const { error } = await supabase.from("priest_services").upsert(newRows, { onConflict: "priest_id,pooja_slug", ignoreDuplicates: true });
+          if (error) throw error;
+        }
+        if (reactivate.length) {
+          const { error } = await supabase.from("priest_services").update({ is_active: true, updated_at: now }).eq("priest_id", profileRecord.id).in("pooja_slug", reactivate);
+          if (error) throw error;
+        }
+        if (deactivate.length) {
+          const { error } = await supabase.from("priest_services").update({ is_active: false, updated_at: now }).eq("priest_id", profileRecord.id).in("pooja_slug", deactivate);
+          if (error) throw error;
+        }
       }
 
       await completeOnboarding();
@@ -239,7 +258,7 @@ export default function PriestOnboarding() {
       <View style={styles.documentRow}><View style={[styles.documentIcon, idDocPath && styles.documentIconDone]}>{idDocPath ? <Check size={22} color={colors.white} /> : <FileBadge2 size={22} color={colors.brandBrown} />}</View><View style={styles.documentCopy}><Text style={styles.itemTitle}>{idDocPath ? "Identity document uploaded" : "Upload Aadhaar or PAN"}</Text><Text style={styles.hint}>JPG or PNG up to 5 MB.</Text></View><Button title={uploading === "id" ? "Uploading..." : idDocPath ? "Replace" : "Upload"} onPress={() => uploadAsset("id")} disabled={Boolean(uploading)} variant="outline" /></View>
     </Section>
 
-    <View style={styles.submitBar}><View style={styles.submitCopy}><Text style={styles.submitTitle}>Ready for review?</Text><Text style={styles.hint}>You can update your details later from Profile.</Text></View><Button testID="save-profile-btn" title={saving || loading ? "Saving..." : "Submit for verification"} onPress={save} disabled={saving || loading} /></View>
+    <View style={styles.submitBar}><View style={styles.submitCopy}><Text style={styles.submitTitle}>Ready for review?</Text><Text style={styles.hint}>You can update your details later from Profile. Set a separate price for each pooja in Profile → Pooja rate card.</Text></View><Button testID="save-profile-btn" title={saving || loading ? "Saving..." : "Submit for verification"} onPress={save} disabled={saving || loading} /></View>
   </ScrollView>;
 }
 
