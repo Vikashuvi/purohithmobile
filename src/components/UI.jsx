@@ -105,19 +105,20 @@ export function SectionHeader({ title, subtitle }) {
   );
 }
 
-export function Field({ label, required = false, children, style }) {
+export const Field = React.forwardRef(function Field({ label, required = false, children, style, error, errorTestID }, ref) {
   return (
-    <View style={[{ marginBottom: spacing.md }, style]}>
+    <View ref={ref} collapsable={false} style={[{ marginBottom: spacing.md }, error ? styles.fieldInvalid : null, style]}>
       {label ? (
-        <Text style={{ fontSize: font.sizes.sm, color: colors.muted2, marginBottom: 6, fontWeight: "600" }}>
+        <Text style={{ fontSize: font.sizes.sm, color: error ? colors.danger : colors.muted2, marginBottom: 6, fontWeight: "600" }}>
           {label}
           {required ? <Text style={{ color: colors.danger, fontWeight: "700" }}> *</Text> : null}
         </Text>
       ) : null}
+      {error ? <Text testID={errorTestID} accessibilityLiveRegion="polite" style={styles.fieldError}>{error}</Text> : null}
       {children}
     </View>
   );
-}
+});
 
 const styles = bindBrandStyles({
   btn: {
@@ -134,4 +135,6 @@ const styles = bindBrandStyles({
     borderWidth: 1, borderColor: colors.warmBorder,
   },
   pill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: radii.pill, alignSelf: "flex-start" },
+  fieldInvalid: { borderWidth: 1, borderColor: colors.danger, borderRadius: radii.md, padding: 10, backgroundColor: "#FEF2F2" },
+  fieldError: { color: colors.danger, fontSize: 12, lineHeight: 16, fontWeight: "700", marginBottom: 8 },
 });

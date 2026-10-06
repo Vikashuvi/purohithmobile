@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { formatInr, notifyUsers, priestUserId } from "../_shared/notify.ts";
+import { renderBookingInvoice } from "../_shared/invoice.ts";
 
 const UPI_ID = "sgmsfreshmindsservicesllp.8050934625.ibz@icici";
 const corsHeaders = {
@@ -103,16 +104,11 @@ async function submitPayment(supabase: any, body: any, identity: any) {
   const ai = await verifyScreenshotWithOpenAI(supabase, body.screenshot_data_url, amount);
   const status = ai.verified && ai.confidence >= 0.7 ? "ai_verified" : "submitted";
   const invoiceNumber = makeInvoiceNumber();
-  const invoiceHtml = renderInvoice({
+  const invoiceHtml = renderBookingInvoice({
     invoiceNumber,
-    amount,
-    customerName: context.customer_name || "Customer",
-    poojaName: context.pooja_name || clean(body.pooja_name) || "Purohith Connect Ceremony",
-    ceremonyDate: context.ceremony_date || context.booking_date || "",
-    ceremonyTime: context.ceremony_time || context.booking_time || "",
-    address: context.address || "",
-    upiId: UPI_ID,
-    status,
+    booking: { ...context, pooja_name: context.pooja_name || clean(body.pooja_name) || "Purohith Connect Ceremony" },
+    amountInr: amount,
+    payment: { mode: "UPI", status: "under_review", reference: UPI_ID },
   });
 
   const { data: payment, error } = await supabase.from("payment_submissions").insert({
@@ -1020,6 +1016,8 @@ async function loadRequestContext(supabase: any, requestId: string) {
     ...data,
     priest_id: proposal?.priest_id || data.priest_id,
     customer_name: data.app_users?.full_name,
+    customer_phone: data.app_users?.phone,
+    customer_email: data.app_users?.email,
     pooja_name: pooja?.name,
   };
 }
@@ -1128,24 +1126,14 @@ function mapProviderRequest(row: any, proposal: any) {
   };
 }
 
-function renderInvoice(details: any) {
-  const issuedAt = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(details.invoiceNumber)}</title><style>body{font-family:Inter,Arial,sans-serif;margin:0;background:#f7f4ef;color:#1f1f1d}.invoice{max-width:760px;margin:32px auto;background:#fff;border:1px solid #e6ded2;border-radius:22px;padding:34px}.brand{display:flex;justify-content:space-between;gap:20px;border-bottom:1px solid #eee2d8;padding-bottom:20px}.name{font-size:24px;font-weight:800}.badge{background:#fff1eb;color:#d84616;border-radius:999px;padding:8px 12px;font-weight:800;font-size:12px}.row{display:flex;justify-content:space-between;border-bottom:1px solid #f0ebe5;padding:14px 0}.muted{color:#6d6861}.total{font-size:28px;font-weight:900}.note{margin-top:22px;padding:16px;background:#fff8f4;border-radius:16px;color:#5d5650}</style></head><body><main class="invoice"><section class="brand"><div><div class="name">Purohith Connect</div><div class="muted">AI-assisted UPI payment acknowledgement</div></div><div class="badge">${escapeHtml(details.status)}</div></section><section><div class="row"><span>Invoice number</span><strong>${escapeHtml(details.invoiceNumber)}</strong></div><div class="row"><span>Issued at</span><strong>${escapeHtml(issuedAt)}</strong></div><div class="row"><span>Customer</span><strong>${escapeHtml(details.customerName)}</strong></div><div class="row"><span>Ceremony</span><strong>${escapeHtml(details.poojaName)}</strong></div><div class="row"><span>Date and time</span><strong>${escapeHtml(`${details.ceremonyDate} ${details.ceremonyTime}`)}</strong></div><div class="row"><span>Address</span><strong>${escapeHtml(details.address)}</strong></div><div class="row"><span>UPI paid to</span><strong>${escapeHtml(details.upiId)}</strong></div><div class="row"><span>Total</span><strong class="total">₹${Number(details.amount).toLocaleString("en-IN")}</strong></div></section><p class="note">This invoice is generated from a customer-uploaded UPI screenshot. Admin verification is required before provider assignment or payout release.</p></main></body></html>`;
-}
-
 function renderCashfreeInvoice({ invoiceNumber, booking, order }: any) {
-  return renderInvoice({
+  return renderBookingInvoice({
     invoiceNumber,
-    amount: Number(order.amount_paise) / 100,
-    customerName: booking.customer_name,
-    poojaName: booking.pooja_name,
-    ceremonyDate: booking.booking_date,
-    ceremonyTime: booking.booking_time,
-    address: booking.address,
-    upiId: "Cashfree Payments",
-    status: "PAID",
-  }).replace("AI-assisted UPI payment acknowledgement", "Cashfree verified payment receipt")
-    .replace("This invoice is generated from a customer-uploaded UPI screenshot. Admin verification is required before provider assignment or payout release.", "Payment status was verified against Cashfree. Provider earnings remain held until the ceremony is completed and an administrator approves release.");
+    booking,
+    amountInr: Number(order.amount_paise) / 100,
+    issuedAt: booking.invoice_issued_at || order.paid_at,
+    payment: { mode: "Online (Cashfree)", status: "paid", reference: order.merchant_order_id, paidAt: order.paid_at },
+  });
 }
 
 function makeInvoiceNumber() {
@@ -1180,10 +1168,6 @@ function coordinate(value: unknown) {
 function nullableNumber(value: unknown) {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
-}
-
-function escapeHtml(value: unknown) {
-  return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#039;" }[char] || char));
 }
 
 async function getIdentity(req: Request, supabase: any) {

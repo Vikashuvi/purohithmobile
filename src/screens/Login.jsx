@@ -180,9 +180,11 @@ export default function Login() {
 
   const signInWithPassword = async () => {
     const id = identifier.trim().toLowerCase();
+    const isUsername = !EMAIL.test(id) && USERNAME.test(id);
     clearMessages();
-    if (isPriest ? !(EMAIL.test(id) || USERNAME.test(id)) : !EMAIL.test(id)) {
-      return setFormError(isPriest ? "Enter your username or email address." : "Enter a valid email address.");
+    if (!isPriest) return setFormError("Username sign-in is only for priest accounts. Go back and choose I am a priest.");
+    if (!EMAIL.test(id) && !isUsername) {
+      return setFormError("Enter your username or email address.");
     }
     if (!password) return setFormError("Enter your password.");
     if (!isSupabaseConfigured || !supabase) return setFormError("Sign in is temporarily unavailable. Please try again shortly.");
@@ -190,13 +192,7 @@ export default function Login() {
     setNotice("Signing you in...");
     try {
       let session;
-      if (isPriest) {
-        session = await priestPasswordLogin(id, password);
-      } else {
-        const { data, error } = await supabase.auth.signInWithPassword({ email: id, password });
-        if (error) throw error;
-        session = data?.session;
-      }
+      session = await priestPasswordLogin(id, password);
       if (!session?.user) throw new Error("Sign in did not return a session. Please try again.");
       const nextUser = await applySupabaseSession(session, role);
       if (!nextUser) throw new Error("Your session could not be opened. Please try again.");
@@ -205,7 +201,9 @@ export default function Login() {
       setNotice("");
       const message = e?.message || "Sign in failed";
       const friendlyMessage = /invalid|credentials/i.test(message)
-        ? `Incorrect ${isPriest ? "username/email" : "email"} or password. If you signed up with an email code, use "Set or reset password" first.`
+        ? isUsername
+          ? "That username and password don't match. Copy them exactly from the message the admin team sent you (passwords are case-sensitive). If it still fails, ask the admin team to confirm your account was created."
+          : "Incorrect username, email, or password. If you signed up with an email code, use \"Set or reset password\" first."
         : /not confirmed/i.test(message)
           ? "Verify your email first: sign in once with an email code."
           : message;
@@ -223,7 +221,7 @@ export default function Login() {
   const switchMethod = (next) => { setMethod(next); setPassword(""); clearMessages(); };
 
   const topPadding = Math.max(insets.top, 16) + 8;
-  const passwordMode = stage === "email" && mode === "signIn" && method === "password";
+  const passwordMode = isPriest && stage === "email" && mode === "signIn" && method === "password";
   const title = stage === "otp"
     ? otpPurpose === "reset" ? "Set a new password" : "Check your email"
     : stage === "reset" ? "Set or reset password" : mode === "signUp" ? "Create your account" : "Welcome back";
@@ -280,7 +278,7 @@ export default function Login() {
         ) : null}
         <Text style={styles.title}>{title}</Text>
         <Text style={styles.sub}>{subtitle}</Text>
-        {stage === "email" && mode === "signIn" ? (
+        {isPriest && stage === "email" && mode === "signIn" ? (
           <View style={styles.methodRow}>
             <Pressable testID="method-otp" onPress={() => switchMethod("otp")} style={[styles.methodChip, method === "otp" && styles.methodChipActive]}>
               <Mail size={14} color={method === "otp" ? colors.white : colors.brandBrown} />
@@ -288,7 +286,7 @@ export default function Login() {
             </Pressable>
             <Pressable testID="method-password" onPress={() => switchMethod("password")} style={[styles.methodChip, method === "password" && styles.methodChipActive]}>
               <KeyRound size={14} color={method === "password" ? colors.white : colors.brandBrown} />
-              <Text style={[styles.methodText, method === "password" && styles.methodTextActive]}>{isPriest ? "Username & password" : "Password"}</Text>
+              <Text style={[styles.methodText, method === "password" && styles.methodTextActive]}>Username & password</Text>
             </Pressable>
           </View>
         ) : null}
@@ -302,17 +300,17 @@ export default function Login() {
 
         {passwordMode ? (
           <>
-            <Field label={isPriest ? "Username or email" : "Email address"}>
-              <View style={styles.inputWrap}>{isPriest ? <UserRound size={18} color={colors.muted2} /> : <Mail size={18} color={colors.muted2} />}
+            <Field label="Username or email">
+              <View style={styles.inputWrap}><UserRound size={18} color={colors.muted2} />
               <TextInput
                 testID="identifier-input"
                 autoCapitalize="none"
                 autoCorrect={false}
-                autoComplete={isPriest ? "username" : "email"}
-                keyboardType={isPriest ? "default" : "email-address"}
+                autoComplete="username"
+                keyboardType="default"
                 value={identifier}
                 onChangeText={(value) => { setIdentifier(value); setFormError(""); }}
-                placeholder={isPriest ? "purohit-xxxxxx or you@example.com" : "you@example.com"}
+                placeholder="purohit-xxxxxx or you@example.com"
                 style={styles.inputBare}
                 returnKeyType="next"
               />
@@ -355,14 +353,16 @@ export default function Login() {
                 />
                 </View>
               </Field>
-              <Field label={`Password (optional, ${minPassword}+ characters)`}>{passwordInput("signup-password-input", "Create a password to sign in faster", () => requestOtp("signUp"))}</Field>
-              <Text style={styles.otpHint}>You can always sign in with an email code too.</Text>
+              {isPriest ? <>
+                <Field label={`Password (optional, ${minPassword}+ characters)`}>{passwordInput("signup-password-input", "Create a password to sign in faster", () => requestOtp("signUp"))}</Field>
+                <Text style={styles.otpHint}>You can always sign in with an email code too.</Text>
+              </> : null}
             </> : null}
             <PrimaryButton testID="send-otp-btn" title={loading ? (mode === "signUp" ? "Creating account..." : "Sending code...") : mode === "signUp" ? "Create account with email" : "Continue with email"} onPress={() => requestOtp(mode === "signUp" ? "signUp" : "signIn")} disabled={loading} />
-            <Pressable onPress={() => { setPassword(""); clearMessages(); setStage("reset"); }} style={styles.linkBtn}>
+            {isPriest ? <Pressable onPress={() => { setPassword(""); clearMessages(); setStage("reset"); }} style={styles.linkBtn}>
               <KeyRound size={15} color={colors.saffron} />
               <Text style={styles.linkText}>Set or reset password</Text>
-            </Pressable>
+            </Pressable> : null}
             {hasRefresh && (
               <Button
                 testID="biometric-btn"

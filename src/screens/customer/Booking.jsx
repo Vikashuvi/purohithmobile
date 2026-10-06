@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { bindBrandStyles } from "../../lib/brandStyles";
 import { View, Text, ScrollView, TextInput, Alert, Pressable, Platform, ActivityIndicator, useWindowDimensions } from "react-native";
 import { Info, Send, ShieldCheck, UserRound, WalletCards } from "lucide-react-native";
@@ -13,6 +13,7 @@ import { getLocalPriest } from "../../data/localPriests";
 import LocationPicker from "../../components/LocationPicker";
 
 const TIME_SLOTS = ["06:00", "07:30", "09:00", "10:30", "16:00", "17:30", "19:00"];
+const REQUIRED_FIELD_ORDER = ["date", "time", "location", "address", "phone", "email"];
 const DEFAULT_POOJAS = [
   { slug: "gauri-ganesha-vratha", name: "Gauri and Ganesha Vratha", base_price_inr: 1800 },
   { slug: "rudrabhishek", name: "Rudra Abhishek", base_price_inr: 2500 },
@@ -55,6 +56,9 @@ export default function Booking({ route, navigation }) {
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmed, setConfirmed] = useState(null);
+  const [errors, setErrors] = useState({});
+  const scrollRef = useRef(null);
+  const fieldRefs = useRef({});
   const { width } = useWindowDimensions();
   const desktop = width >= 860;
 
@@ -159,16 +163,47 @@ export default function Booking({ route, navigation }) {
     }
   }, [user?.phone, phone]);
 
-  const submit = async () => {
-    if (!date || !time || !address.trim()) return Alert.alert("Missing", "Choose date, time and address");
-    if (!coords) return Alert.alert("Pin your location", "Search for your address, use current location, or tap the map so the purohit can find you.");
-    const cleanPhone = (phone || user?.phone || "").replace(/\D/g, "").slice(-10);
-    if (!cleanPhone || cleanPhone.length !== 10) {
-      return Alert.alert(
-        "Mobile Number Required",
-        "Please enter a valid 10-digit mobile number for order confirmation, priest coordination, and secure payment processing."
-      );
+  const rememberField = (key) => (node) => {
+    fieldRefs.current[key] = node;
+  };
+
+  const scrollToField = (key) => {
+    const node = fieldRefs.current[key];
+    if (!node) return;
+    if (Platform.OS === "web" && typeof node.scrollIntoView === "function") {
+      node.style.scrollMarginTop = "12px";
+      node.style.scrollMarginBottom = "180px";
+      node.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
     }
+    const scroller = scrollRef.current;
+    if (!scroller || typeof node.measureLayout !== "function") return;
+    const relativeTo = typeof scroller.getInnerViewNode === "function" ? scroller.getInnerViewNode() : scroller;
+    node.measureLayout(
+      relativeTo,
+      (_x, y) => scroller.scrollTo({ y: Math.max(0, y - 24), animated: true }),
+      () => {}
+    );
+  };
+
+  const clearError = (key) => {
+    setErrors((current) => {
+      if (!current[key]) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const submit = async () => {
+    const nextErrors = bookingFieldErrors({ date, time, address, coords, phone: phone || user?.phone || "", email });
+    setErrors(nextErrors);
+    const firstInvalid = REQUIRED_FIELD_ORDER.find((key) => nextErrors[key]);
+    if (firstInvalid) {
+      setTimeout(() => scrollToField(firstInvalid), 60);
+      return;
+    }
+    const cleanPhone = (phone || user?.phone || "").replace(/\D/g, "").slice(-10);
     if (!isOfferedCeremony) {
       return Alert.alert(
         "Ceremony Unavailable",
@@ -226,6 +261,8 @@ export default function Booking({ route, navigation }) {
   if (priestError) return <View style={styles.loadState}><UserRound size={30} color={colors.brandOrangeDark} /><Text style={styles.loadTitle}>Unable to open booking</Text><Text style={styles.loadBody}>{priestError}</Text><Button title="Try again" onPress={() => setPriestLoadAttempt((attempt) => attempt + 1)} style={styles.loadAction} /><Button title="Back to purohits" variant="outline" onPress={() => navigation.goBack()} style={styles.loadAction} /></View>;
   if (!priest || !pooja) return <View style={styles.loadState}><ActivityIndicator color={colors.saffron} /><Text style={styles.loadingText}>Preparing your booking…</Text></View>;
 
+  const firstErrorKey = REQUIRED_FIELD_ORDER.find((key) => errors[key]);
+
   if (confirmed) {
     return (
       <ScrollView contentContainerStyle={[styles.confirmedPage, desktop && styles.contentDesktop]}>
@@ -251,7 +288,7 @@ export default function Booking({ route, navigation }) {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.white }}>
-      <ScrollView contentContainerStyle={[styles.content, desktop && styles.contentDesktop]} keyboardShouldPersistTaps="handled">
+      <ScrollView ref={scrollRef} contentContainerStyle={[styles.content, desktop && styles.contentDesktop]} keyboardShouldPersistTaps="handled">
         <Text style={styles.eyebrow}>REVIEW AND CONTINUE</Text>
         <Text style={styles.h1}>{pooja.name}</Text>
         <View style={styles.providerSummary}>
@@ -314,7 +351,7 @@ export default function Booking({ route, navigation }) {
         ) : null}
 
         {/* Date scroller */}
-        <Field label="Select date" required>
+        <Field ref={rememberField("date")} label="Select date" required error={errors.date} errorTestID="booking-error-date">
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {upcomingDates().map((d) => {
               const iso = fmtDate(d);
@@ -325,7 +362,7 @@ export default function Booking({ route, navigation }) {
                   key={iso}
                   testID={`date-${iso}`}
                   disabled={blocked}
-                  onPress={() => setDate(iso)}
+                  onPress={() => { setDate(iso); clearError("date"); }}
                   style={[styles.dayChip, isSel && styles.dayChipActive, blocked && { opacity: 0.35 }]}
                 >
                   <Text style={[styles.dayChipDow, isSel && { color: colors.white }]}>
@@ -339,13 +376,13 @@ export default function Booking({ route, navigation }) {
         </Field>
 
         {/* Time slots */}
-        <Field label="Time slot" required>
+        <Field ref={rememberField("time")} label="Time slot" required error={errors.time} errorTestID="booking-error-time">
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             {TIME_SLOTS.map(s => (
               <Pressable
                 key={s}
                 testID={`time-${s}`}
-                onPress={() => setTime(s)}
+                onPress={() => { setTime(s); clearError("time"); }}
                 style={[styles.timeChip, time === s && styles.timeChipActive]}
               >
                 <Text style={[styles.timeChipTxt, time === s && { color: colors.white }]}>{s}</Text>
@@ -354,30 +391,51 @@ export default function Booking({ route, navigation }) {
           </View>
         </Field>
 
-        <Field label="Ceremony location" required>
-          <LocationPicker coords={coords} onCoordsChange={setCoords} address={address} onAddressChange={setAddress} title={pooja.name} />
+        <Field ref={rememberField("location")} label="Ceremony location" required error={errors.location} errorTestID="booking-error-location">
+          <LocationPicker
+            coords={coords}
+            onCoordsChange={(next) => { setCoords(next); if (next) clearError("location"); }}
+            address={address}
+            onAddressChange={(text) => { setAddress(text); if (String(text || "").trim()) clearError("address"); }}
+            title={pooja.name}
+          />
         </Field>
-        <Field label="Address" required>
-          <TextInput testID="booking-address" multiline value={address} onChangeText={setAddress}
-            placeholder="Flat / house no., building, street, area" style={[styles.input, { minHeight: 80, paddingVertical: 12, textAlignVertical: "top" }]} />
+        <Field ref={rememberField("address")} label="Address" required error={errors.address} errorTestID="booking-error-address">
+          <TextInput testID="booking-address" multiline value={address} onChangeText={(text) => { setAddress(text); if (text.trim()) clearError("address"); }}
+            placeholder="Flat / house no., building, street, area" style={[styles.input, errors.address && styles.inputError, { minHeight: 80, paddingVertical: 12, textAlignVertical: "top" }]} />
         </Field>
         <Field label="Landmark (optional)">
           <TextInput testID="booking-landmark" value={landmark} onChangeText={setLandmark} placeholder="Near ABC temple" style={styles.input} />
         </Field>
         {/* Contact Phone */}
-        <Field label="Mobile number (required for booking & payment)" required>
+        <Field ref={rememberField("phone")} label="Mobile number (required for booking & payment)" required error={errors.phone} errorTestID="booking-error-phone">
           <TextInput
             testID="booking-phone"
             keyboardType="phone-pad"
             maxLength={10}
             value={phone}
-            onChangeText={setPhone}
+            onChangeText={(value) => {
+              setPhone(value);
+              if (value.replace(/\D/g, "").slice(-10).length === 10) clearError("phone");
+            }}
             placeholder="10-digit mobile number"
-            style={styles.input}
+            style={[styles.input, errors.phone && styles.inputError]}
           />
         </Field>
-        <Field label="Email for invoice (optional)">
-          <TextInput testID="booking-email" keyboardType="email-address" autoCapitalize="none" value={email} onChangeText={setEmail} placeholder="you@example.com" style={styles.input} />
+        <Field ref={rememberField("email")} label="Email for invoice (optional)" error={errors.email} errorTestID="booking-error-email">
+          <TextInput
+            testID="booking-email"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            value={email}
+            onChangeText={(value) => {
+              setEmail(value);
+              const trimmed = value.trim();
+              if (!trimmed || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) clearError("email");
+            }}
+            placeholder="you@example.com"
+            style={[styles.input, errors.email && styles.inputError]}
+          />
         </Field>
         <Field label="Notes to priest (optional)">
           <TextInput testID="booking-notes" multiline value={notes} onChangeText={setNotes} placeholder="Any special requests" style={[styles.input, { minHeight: 70, paddingVertical: 12 }]} />
@@ -403,6 +461,11 @@ export default function Booking({ route, navigation }) {
 
       {/* Sticky pay bar */}
       <View style={styles.stickyBar}>
+        {firstErrorKey ? (
+          <Pressable onPress={() => scrollToField(firstErrorKey)} style={styles.formErrorBanner}>
+            <Text style={styles.formErrorBannerText}>{errors[firstErrorKey]}</Text>
+          </Pressable>
+        ) : null}
         <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
           <Text style={{ color: colors.muted2, fontSize: font.sizes.xs }}>{t.includingGst}</Text>
           <Text testID="cart-total" style={{ color: colors.saffron, fontWeight: "800", fontSize: font.sizes.xl }}>
@@ -457,6 +520,21 @@ function findDefaultPooja(slug) {
   return normalizePooja(DEFAULT_POOJAS.find((item) => item.slug === slug) || DEFAULT_POOJAS[2]);
 }
 
+function bookingFieldErrors({ date, time, address, coords, phone, email }) {
+  const next = {};
+  if (!date) next.date = "Select a date for the ceremony.";
+  if (!time) next.time = "Select a time slot.";
+  if (!coords) next.location = "Pin the ceremony location. Search for a place, use current location, or tap the map.";
+  if (!String(address || "").trim()) next.address = "Enter the ceremony address.";
+  const cleanPhone = String(phone || "").replace(/\D/g, "").slice(-10);
+  if (cleanPhone.length !== 10) next.phone = "Enter a valid 10-digit mobile number.";
+  const cleanEmail = String(email || "").trim();
+  if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+    next.email = "Enter a valid email address, or leave this blank.";
+  }
+  return next;
+}
+
 function withTimeout(promise, timeoutMs) {
   return Promise.race([
     promise,
@@ -499,6 +577,9 @@ const styles = bindBrandStyles({
     borderWidth: 0, paddingHorizontal: spacing.lg,
     fontSize: font.sizes.base, color: colors.ink,
   },
+  inputError: { borderWidth: 1, borderColor: colors.danger, backgroundColor: colors.white },
+  formErrorBanner: { backgroundColor: "#FEF2F2", borderWidth: 1, borderColor: colors.danger, borderRadius: radii.sm, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 8 },
+  formErrorBannerText: { color: colors.danger, fontSize: 12, lineHeight: 16, fontWeight: "700" },
   paymentCard: { marginTop: spacing.md, borderRadius: radii.lg, borderWidth: 1, borderColor: colors.warmBorder, ...shadow.card },
   paymentTop: { flexDirection: "row", alignItems: "center", gap: 12 },
   qrMark: { width: 44, height: 44, borderRadius: 14, backgroundColor: "#FFF1EB", alignItems: "center", justifyContent: "center" },

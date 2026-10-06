@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { formatInr, notifyUsers, priestUserId } from "../_shared/notify.ts";
+import { renderBookingInvoice } from "../_shared/invoice.ts";
 
 const encoder = new TextEncoder();
 
@@ -117,7 +118,13 @@ async function markPaid(supabase: any, order: any, now: string) {
   if (!booking) throw new Error("Booking for paid order was not found");
 
   const invoiceNumber = booking.invoice_no || makeInvoiceNumber();
-  const invoiceHtml = booking.invoice_html || renderInvoice(invoiceNumber, booking, order);
+  const invoiceHtml = renderBookingInvoice({
+    invoiceNumber,
+    booking,
+    amountInr: Number(order.amount_paise) / 100,
+    issuedAt: booking.invoice_issued_at || now,
+    payment: { mode: "Online (Cashfree)", status: "paid", reference: order.merchant_order_id, paidAt: order.paid_at || now },
+  });
   await supabase.from("bookings").update({
     ...(booking.status === "accepted" ? { status: "confirmed" } : {}),
     payment_status: "paid",
@@ -296,11 +303,6 @@ function constantTimeEqual(left: string, right: string) {
   return mismatch === 0;
 }
 
-function renderInvoice(invoiceNumber: string, booking: any, order: any) {
-  const amount = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(Number(order.amount_paise) / 100);
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(invoiceNumber)}</title><style>body{font-family:Arial,sans-serif;color:#2b1b14;margin:40px}.head{display:flex;justify-content:space-between;border-bottom:2px solid #ea580c;padding-bottom:20px}.total{font-size:28px;font-weight:700}.muted{color:#6b625e}</style></head><body><div class="head"><div><h1>Purohith Connect</h1><p class="muted">Book · Perform · Bless</p></div><div><strong>${escapeHtml(invoiceNumber)}</strong><p class="muted">Paid via Cashfree</p></div></div><h2>${escapeHtml(booking.pooja_name || order.pooja_slug || "Ceremony booking")}</h2><p>${escapeHtml(booking.booking_date || "")} ${escapeHtml(booking.booking_time || "")}</p><p>${escapeHtml(booking.address || "")}</p><p class="total">${escapeHtml(amount)}</p><p>Cashfree order: ${escapeHtml(order.merchant_order_id)}</p><p class="muted">Payment confirmed by a signed provider webhook.</p></body></html>`;
-}
-
 function makeInvoiceNumber() {
   return `PC-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 }
@@ -326,10 +328,6 @@ function getSupabaseSecretKey() {
 
 function clean(value: unknown) {
   return String(value || "").trim();
-}
-
-function escapeHtml(value: unknown) {
-  return clean(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 }
 
 function json(payload: unknown, status = 200) {
