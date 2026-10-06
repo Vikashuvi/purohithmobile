@@ -167,7 +167,7 @@ async function listProposals(supabase: any, body: any, identity: any) {
 
   let booking = null;
   if (request.booking_id) {
-    const { data: b } = await supabase.from("bookings").select("id,status,payment_status,invoice_no,invoice_html,invoice_issued_at").eq("id", request.booking_id).maybeSingle();
+    const { data: b } = await supabase.from("bookings").select("id,status,payment_status,total_inr,invoice_no,invoice_html,invoice_issued_at").eq("id", request.booking_id).maybeSingle();
     booking = b;
   }
 
@@ -192,29 +192,103 @@ async function awardProposal(supabase: any, body: any, identity: any) {
   const { data: proposal, error } = await supabase.from("ceremony_proposals").select("*").eq("id", proposalId).eq("request_id", requestId).maybeSingle();
   if (error) throw error;
   if (!proposal) return json({ error: "Proposal not found" }, 404);
-  const { data: request } = await supabase.from("ceremony_requests").select("id,customer_id,pooja_slug,ceremony_date,ceremony_time,address,landmark,latitude,longitude").eq("id", requestId).maybeSingle();
+  if (["rejected", "withdrawn", "declined"].includes(proposal.status)) return json({ error: "This proposal is no longer available" }, 409);
+  const { data: request } = await supabase.from("ceremony_requests").select("*").eq("id", requestId).maybeSingle();
   if (!request || (request.customer_id !== identity.id && !isAdmin(identity))) return json({ error: "Request not found" }, 404);
-  const { data: pooja } = request?.pooja_slug ? await supabase.from("poojas").select("name").eq("slug", request.pooja_slug).maybeSingle() : { data: null };
+  if (request.payment_status === "paid") return json({ error: "This ceremony is already paid" }, 409);
+
+  const now = new Date().toISOString();
   const { data: priest } = proposal.priest_id ? await supabase.from("priest_profiles").select("display_name,rating,review_count,photo_url").eq("id", proposal.priest_id).maybeSingle() : { data: null };
-  await supabase.from("ceremony_proposals").update({ status: "declined" }).eq("request_id", requestId).neq("id", proposalId);
-  await supabase.from("ceremony_proposals").update({ status: "accepted" }).eq("id", proposalId);
-  await supabase.from("ceremony_requests").update({ awarded_proposal_id: proposalId, status: "awarded", payment_status: "unpaid", updated_at: new Date().toISOString() }).eq("id", requestId);
+  const { data: pooja } = request.pooja_slug ? await supabase.from("poojas").select("name").eq("slug", request.pooja_slug).maybeSingle() : { data: null };
+
+  if (request.booking_id) {
+    const { data: existing } = await supabase.from("bookings").select("*").eq("id", request.booking_id).maybeSingle();
+    if (existing && request.awarded_proposal_id === proposalId && ["pending", "accepted", "confirmed"].includes(existing.status)) {
+      return json({
+        proposal_id: proposalId,
+        priest_id: proposal.priest_id,
+        status: existing.status === "pending" ? "awaiting_priest" : "accepted",
+        upi_id: UPI_ID,
+        amount_inr: proposal.amount_inr,
+        booking: existing,
+        proposal: mapProposal({ ...proposal, priest_profiles: priest }),
+        request: mapRequest(request, pooja),
+      });
+    }
+    if (existing?.payment_status === "paid" || existing?.status === "confirmed") return json({ error: "This ceremony is already booked" }, 409);
+    if (existing?.status === "accepted") return json({ error: "The purohit already accepted. Complete payment, or ask them to decline before choosing someone else." }, 409);
+    if (existing?.status === "pending") {
+      await supabase.from("bookings").update({ status: "cancelled", updated_at: now }).eq("id", existing.id);
+      if (request.awarded_proposal_id && request.awarded_proposal_id !== proposalId) {
+        await supabase.from("ceremony_proposals").update({ status: "active" }).eq("id", request.awarded_proposal_id).eq("status", "submitted");
+      }
+    }
+  }
+
+  const booking = await insertPendingBooking(supabase, {
+    customerId: identity.id,
+    priestId: proposal.priest_id,
+    poojaSlug: request.pooja_slug,
+    amountPaise: Number(proposal.amount_inr) * 100,
+    bookingDate: request.ceremony_date,
+    bookingTime: request.ceremony_time,
+    address: request.address,
+    landmark: request.landmark,
+    latitude: request.latitude,
+    longitude: request.longitude,
+    notes: request.notes,
+    status: "pending",
+    paymentStatus: "unpaid",
+  });
+  await supabase.from("ceremony_proposals").update({ status: "submitted" }).eq("id", proposalId);
+  await supabase.from("ceremony_requests").update({
+    awarded_proposal_id: proposalId,
+    booking_id: booking.id,
+    status: "awarded",
+    payment_status: "unpaid",
+    updated_at: now,
+  }).eq("id", requestId);
   await notifyUsers(supabase, {
     userIds: [await priestUserId(supabase, proposal.priest_id)],
     type: "proposal_selected",
-    title: "Your quote was selected",
-    body: `${pooja?.name || "Ceremony"} · ${formatInr(proposal.amount_inr)}. The booking is confirmed once the customer pays.`,
+    title: "A customer chose your quote",
+    body: `${pooja?.name || "Ceremony"} · ${formatInr(proposal.amount_inr)}. Accept to let them pay, or decline.`,
     requestId,
+    bookingId: booking.id,
   });
   return json({
     proposal_id: proposalId,
     priest_id: proposal.priest_id,
-    status: "awarded",
+    status: "awaiting_priest",
     upi_id: UPI_ID,
     amount_inr: proposal.amount_inr,
-    proposal: mapProposal({ ...proposal, status: "accepted", priest_profiles: priest }),
-    request: mapRequest(request, pooja),
+    booking,
+    proposal: mapProposal({ ...proposal, status: "submitted", priest_profiles: priest }),
+    request: mapRequest({ ...request, awarded_proposal_id: proposalId, booking_id: booking.id, payment_status: "unpaid" }, pooja),
   });
+}
+
+async function confirmAwardedProposal(supabase: any, bookingId: string) {
+  const { data: request } = await supabase.from("ceremony_requests").select("id,awarded_proposal_id").eq("booking_id", bookingId).maybeSingle();
+  if (!request?.awarded_proposal_id) return;
+  await supabase.from("ceremony_proposals").update({ status: "declined" }).eq("request_id", request.id).neq("id", request.awarded_proposal_id).in("status", ["active", "submitted"]);
+  await supabase.from("ceremony_proposals").update({ status: "accepted" }).eq("id", request.awarded_proposal_id);
+  await supabase.from("ceremony_requests").update({ status: "awarded", updated_at: new Date().toISOString() }).eq("id", request.id);
+}
+
+async function releaseRejectedProposal(supabase: any, bookingId: string, now: string) {
+  const { data: request } = await supabase.from("ceremony_requests").select("id,awarded_proposal_id,payment_status").eq("booking_id", bookingId).maybeSingle();
+  if (!request || request.payment_status === "paid") return;
+  if (request.awarded_proposal_id) {
+    await supabase.from("ceremony_proposals").update({ status: "rejected" }).eq("id", request.awarded_proposal_id);
+  }
+  await supabase.from("ceremony_requests").update({
+    status: "open",
+    awarded_proposal_id: null,
+    booking_id: null,
+    payment_status: "unpaid",
+    updated_at: now,
+  }).eq("id", request.id);
 }
 
 async function providerRequests(supabase: any, _body: any, identity: any) {
@@ -369,31 +443,23 @@ async function createCashfreeOrder(supabase: any, body: any, identity: any) {
     const { data: request } = await supabase.from("ceremony_requests").select("*").eq("id", requestId).maybeSingle();
     if (!request || request.customer_id !== identity.id) return json({ error: "Ceremony request not found" }, 404);
     proposalId = proposalId || request.awarded_proposal_id;
-    if (!proposalId) return json({ error: "Choose a proposal before checkout" }, 409);
-    const { data: proposal } = await supabase.from("ceremony_proposals").select("*").eq("id", proposalId).eq("request_id", requestId).eq("status", "accepted").maybeSingle();
-    if (!proposal) return json({ error: "The accepted proposal was not found" }, 404);
-    priestId = proposal.priest_id;
-    poojaSlug = request.pooja_slug;
-    amountPaise = Number(proposal.amount_inr) * 100;
-    bookingId = request.booking_id;
-    if (!bookingId) {
-      booking = await insertPendingBooking(supabase, {
-        customerId: identity.id,
-        priestId,
-        poojaSlug,
-        amountPaise,
-        bookingDate: request.ceremony_date,
-        bookingTime: request.ceremony_time,
-        address: request.address,
-        landmark: request.landmark,
-        latitude: request.latitude,
-        longitude: request.longitude,
-        notes: request.notes,
-        status: "accepted",
-      });
-      bookingId = booking.id;
-      await supabase.from("ceremony_requests").update({ booking_id: bookingId, updated_at: new Date().toISOString() }).eq("id", requestId);
+    if (!proposalId || !request.booking_id) return json({ error: "The Purohit has not accepted this request yet. You can pay once they accept." }, 409);
+    const { data: existingBooking } = await supabase.from("bookings").select("*").eq("id", request.booking_id).maybeSingle();
+    if (!existingBooking || existingBooking.customer_id !== identity.id) return json({ error: "Booking not found" }, 404);
+    if (existingBooking.payment_status === "paid") return json({ error: "This booking is already paid" }, 409);
+    if (existingBooking.status !== "accepted") {
+      const message = existingBooking.status === "pending"
+        ? "The Purohit has not accepted this request yet. You can pay once they accept."
+        : existingBooking.status === "rejected"
+          ? "The Purohit declined this request. Choose another proposal."
+          : `A ${existingBooking.status} booking cannot be paid`;
+      return json({ error: message }, 409);
     }
+    booking = existingBooking;
+    bookingId = existingBooking.id;
+    priestId = existingBooking.priest_id;
+    poojaSlug = existingBooking.pooja_slug;
+    amountPaise = Number(existingBooking.total_inr) * 100;
   } else if (bookingId) {
     const { data } = await supabase.from("bookings").select("*").eq("id", bookingId).maybeSingle();
     if (!data || data.customer_id !== identity.id) return json({ error: "Booking not found" }, 404);
@@ -763,6 +829,8 @@ async function providerBookingAction(supabase: any, body: any, identity: any) {
   }
   let refund = null;
   if (action === "reject" && paid) refund = await refundPaidBooking(supabase, data, reason || "Purohit declined the booking");
+  if (!paid && action === "accept") await confirmAwardedProposal(supabase, bookingId);
+  if (!paid && action === "reject") await releaseRejectedProposal(supabase, bookingId, now);
 
   const pooja = data.pooja_name || "your ceremony";
   const priestName = data.priest_name || "The Purohit";

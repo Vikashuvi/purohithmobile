@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { bindBrandStyles } from "../../lib/brandStyles";
 import { View, Text, FlatList, RefreshControl, Modal, Pressable, TextInput, ScrollView, Alert, Image } from "react-native";
-import { CalendarDays, ChevronRight, LocateFixed, MapPin, MessageSquareText, Phone, Sparkles, ArrowRight, Plus } from "lucide-react-native";
+import { CalendarDays, CheckCircle2, ChevronRight, Clock3, LocateFixed, MapPin, MessageSquareText, Phone, Sparkles, ArrowRight, Plus, X } from "lucide-react-native";
 import { colors, radii, spacing, font } from "../../lib/theme";
 import { Button, Field } from "../../components/UI";
 import { EmptyState, StatusBadge } from "../../components/ProductUI";
@@ -312,8 +312,29 @@ export default function MyBookings({ navigation }) {
                   <Text style={{ color: colors.info, fontSize: font.sizes.xs }}>Refunded ₹{(b.refund_amount || 0).toLocaleString("en-IN")}</Text>
                 )}
               </View>
-              {b.status === "pending" && b.payment_status !== "paid" ? <Text style={styles.flowHint}>Waiting for {b.priest_name || "the Purohit"} to accept. You’ll pay only after they accept.</Text> : null}
-              {b.status === "rejected" ? <Text style={[styles.flowHint, { color: colors.danger }]}>{b.priest_name || "The Purohit"} declined this request.{b.rejected_reason ? ` "${b.rejected_reason}"` : ""}</Text> : null}
+              {b.status === "pending" && b.payment_status !== "paid" ? (
+                <View style={styles.statusStripSelected}>
+                  <Clock3 size={15} color={colors.brandBrown} />
+                  <Text style={styles.statusStripSelectedText}>Selected — waiting for acceptance</Text>
+                </View>
+              ) : null}
+              {b.status === "rejected" ? (
+                <View style={styles.statusStripRejected}>
+                  <X size={15} color={colors.danger} />
+                  <Text style={styles.statusStripRejectedText}>Rejected — {b.priest_name || "the purohit"} declined</Text>
+                </View>
+              ) : null}
+              {b.status === "cancelled" ? (
+                <View style={styles.statusStripMuted}>
+                  <Text style={styles.statusStripMutedText}>Cancelled</Text>
+                </View>
+              ) : null}
+              {awaitingPayment ? (
+                <View style={styles.statusStripReady}>
+                  <CheckCircle2 size={15} color={colors.success} />
+                  <Text style={styles.statusStripReadyText}>Accepted — ready to pay</Text>
+                </View>
+              ) : null}
               {awaitingPayment ? <Button testID={`pay-btn-${b.id}`} title={payingId === b.id ? "Opening secure checkout…" : `Pay ₹${Number(total || 0).toLocaleString("en-IN")} to confirm`} onPress={() => payNow(b)} disabled={!!payingId} style={{ marginTop: 14 }} /> : null}
               {b.status === "confirmed" || b.payment_status === "paid" ? <View style={styles.primaryActions}>
                 {b.status === "confirmed" ? <Pressable testID={`track-btn-${b.id}`} onPress={() => navigation.navigate("TrackPriest", { booking: b })} style={styles.trackAction}><LocateFixed size={17} color={colors.white} /><Text style={styles.trackActionText}>Track purohit</Text><ChevronRight size={16} color={colors.white} /></Pressable> : null}
@@ -483,6 +504,14 @@ const styles = bindBrandStyles({
   metaSmall: { fontSize: 11, color: colors.muted2, marginTop: 4 },
   priceRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 15 },
   flowHint: { color: colors.muted2, fontSize: 12, lineHeight: 17, marginTop: 10 },
+  statusStripSelected: { marginTop: 12, minHeight: 44, borderRadius: 12, borderWidth: 1.5, borderColor: colors.brandBrown, backgroundColor: "#F8F1EE", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 12 },
+  statusStripSelectedText: { color: colors.brandBrown, fontSize: 13, fontWeight: "700" },
+  statusStripRejected: { marginTop: 12, minHeight: 44, borderRadius: 12, borderWidth: 1.5, borderColor: "#F3C1C1", backgroundColor: "#FEF2F2", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 12 },
+  statusStripRejectedText: { color: colors.danger, fontSize: 13, fontWeight: "700" },
+  statusStripReady: { marginTop: 12, minHeight: 44, borderRadius: 12, borderWidth: 1.5, borderColor: "#B7E0C2", backgroundColor: "#F1F8F4", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 12 },
+  statusStripReadyText: { color: colors.success, fontSize: 13, fontWeight: "700" },
+  statusStripMuted: { marginTop: 12, minHeight: 44, borderRadius: 12, backgroundColor: colors.muted, alignItems: "center", justifyContent: "center", paddingHorizontal: 12 },
+  statusStripMutedText: { color: colors.muted2, fontSize: 13, fontWeight: "700" },
   price: { color: colors.ink, fontWeight: "700", fontSize: 17 },
   primaryActions: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 16 },
   trackAction: { flex: 1, minHeight: 46, borderRadius: 23, backgroundColor: colors.brandBrown, paddingHorizontal: 15, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 },

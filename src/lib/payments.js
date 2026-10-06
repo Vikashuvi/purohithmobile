@@ -138,15 +138,7 @@ export async function listRequestProposals(requestId) {
 }
 
 export async function selectProposal(requestId, proposalId) {
-  try {
-    return await invokePaymentWorkflow({ action: "award_proposal", request_id: requestId, proposal_id: proposalId });
-  } catch (err) {
-    if (!supabase) throw err;
-    await supabase.from("ceremony_proposals").update({ status: "declined" }).eq("request_id", requestId).neq("id", proposalId);
-    await supabase.from("ceremony_proposals").update({ status: "accepted" }).eq("id", proposalId);
-    await supabase.from("ceremony_requests").update({ awarded_proposal_id: proposalId, status: "awarded", updated_at: new Date().toISOString() }).eq("id", requestId);
-    return { status: "awarded", proposal_id: proposalId };
-  }
+  return invokePaymentWorkflow({ action: "award_proposal", request_id: requestId, proposal_id: proposalId });
 }
 
 export async function listProviderRequests(userId) {

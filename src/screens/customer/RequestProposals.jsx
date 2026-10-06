@@ -86,41 +86,87 @@ export default function RequestProposals({ route, navigation }) {
 
   const bestPrice = useMemo(() => bids.length ? Math.min(...bids.map((bid) => Number(bid.amount))) : 0, [bids]);
 
+  const applyLoaded = (data, proposalList) => {
+    setBids(proposalList);
+    if (data?.request) setRequestData(data.request);
+    const booking = data?.booking || null;
+    if (booking) {
+      setPayment((prev) => ({
+        ...(prev || {}),
+        order: {
+          ...(prev?.order || {}),
+          status: data.request?.payment_status === "paid" || booking.payment_status === "paid" ? "paid" : (prev?.order?.status || "pending"),
+          amount_inr: booking.total_inr || prev?.order?.amount_inr,
+        },
+        booking,
+      }));
+    }
+    const awardedId = data?.request?.awarded_proposal_id;
+    const chosen = proposalList.find((bid) => bid.id === awardedId);
+    if (chosen && !["rejected", "cancelled"].includes(booking?.status)) {
+      setSelectedBid(chosen);
+      setPaymentAmount(String(chosen.amount || chosen.amount_inr || ""));
+    } else if (!awardedId) {
+      setSelectedBid(null);
+    }
+  };
+
   useEffect(() => {
     if (!request.id) {
       setBids(DEMO_BIDS);
       setLoading(false);
       return;
     }
+    let cancelled = false;
     listRequestProposals(request.id)
-      .then((data) => {
+      .then(async (data) => {
+        if (cancelled) return;
         const proposalList = data?.proposals?.length ? data.proposals : (user?.demo ? DEMO_BIDS : []);
-        setBids(proposalList);
-        if (data?.request) {
-          setRequestData(data.request);
+        const awardedId = data?.request?.awarded_proposal_id;
+        const awardedProposal = proposalList.find((bid) => bid.id === awardedId);
+        const needsPriestRequest = Boolean(
+          awardedProposal
+          && !["rejected", "declined", "withdrawn"].includes(awardedProposal.status)
+          && data?.request?.payment_status !== "paid"
+          && (!data?.booking || !["pending", "accepted", "confirmed"].includes(data.booking.status))
+        );
+        if (needsPriestRequest && !user?.demo) {
+          try {
+            const awarded = await selectProposal(request.id, awardedId);
+            if (cancelled) return;
+            applyLoaded({
+              ...data,
+              booking: awarded?.booking || data?.booking,
+              request: { ...data.request, awarded_proposal_id: awardedId, booking_id: awarded?.booking?.id || data?.request?.booking_id },
+              proposals: proposalList.map((bid) => bid.id === awardedId ? { ...bid, status: awarded?.proposal?.status || "submitted" } : bid),
+            }, proposalList.map((bid) => bid.id === awardedId ? { ...bid, status: awarded?.proposal?.status || "submitted" } : bid));
+            return;
+          } catch (_) {}
         }
-        if (data?.booking) {
-          setPayment((prev) => prev || {
-            order: {
-              status: data.request?.payment_status === "paid" || data.booking?.payment_status === "paid" ? "paid" : "pending",
-              amount_inr: data.booking.total_inr,
-            },
-            booking: data.booking,
-          });
-        }
-        const awardedId = data?.request?.awarded_proposal_id || params.request?.awarded_proposal_id;
-        const acceptedBid = proposalList.find((b) => b.id === awardedId || b.status === "accepted");
-        if (acceptedBid) {
-          setSelectedBid(acceptedBid);
-          setPaymentAmount(String(acceptedBid.amount || acceptedBid.amount_inr || ""));
-        }
+        applyLoaded(data, proposalList);
       })
-      .catch(() => setBids(user?.demo ? DEMO_BIDS : []))
-      .finally(() => setLoading(false));
+      .catch(() => { if (!cancelled) setBids(user?.demo ? DEMO_BIDS : []); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [request.id, user?.demo]);
 
   const awardedId = requestData?.awarded_proposal_id || params.request?.awarded_proposal_id;
   const activeConfirmedBid = selectedBid || bids.find((b) => b.id === awardedId || b.status === "accepted") || bids[0];
+  const bookingStatus = payment?.booking?.status || "";
+  const priestAccepted = ["accepted", "confirmed"].includes(bookingStatus) || isPaid;
+  const awaitingPriest = Boolean(selectedBid) && !priestAccepted && !isPaid && bookingStatus !== "rejected";
+  const rejectedBids = bids.filter((bid) => bid.status === "rejected");
+
+  useEffect(() => {
+    if (!request.id || !awaitingPriest || user?.demo) return undefined;
+    const timer = setInterval(() => {
+      listRequestProposals(request.id).then((data) => {
+        const proposalList = data?.proposals?.length ? data.proposals : [];
+        applyLoaded(data, proposalList);
+      }).catch(() => {});
+    }, 8000);
+    return () => clearInterval(timer);
+  }, [request.id, awaitingPriest, user?.demo]);
 
   useEffect(() => {
     if (isPaid && !selectedBid && activeConfirmedBid) {
@@ -145,29 +191,41 @@ export default function RequestProposals({ route, navigation }) {
   }, [payment, currentBookingId, activeConfirmedBid, request]);
 
   const award = async (bid) => {
+    if (["rejected", "declined", "withdrawn"].includes(bid.status)) return;
     setSelecting(bid.id);
     try {
-      const data = await selectProposal(request.id, bid.id);
-      const accepted = data?.proposal || bid;
-      setSelectedBid(accepted);
-      setPaymentAmount(String(data?.amount_inr || bid.amount || bid.amount_inr || ""));
-      setPayment(null);
-      setCheckoutVisible(true);
-      return data;
-    } catch (error) {
       if (user?.demo) {
-        setSelectedBid(bid);
+        setSelectedBid({ ...bid, status: "submitted" });
         setPaymentAmount(String(bid.amount || bid.amount_inr || ""));
-        setCheckoutVisible(true);
+        setPayment({ booking: { status: "pending", payment_status: "unpaid" }, order: { status: "pending" } });
+        setCheckoutVisible(false);
+        Alert.alert("Request sent", `${bid.priest_name} needs to accept before you can pay.`);
         return;
       }
-      Alert.alert("Could not select proposal", error?.response?.data?.detail || "Try again.");
+      const data = await selectProposal(request.id, bid.id);
+      const accepted = data?.proposal || { ...bid, status: "submitted" };
+      setSelectedBid(accepted);
+      setPaymentAmount(String(data?.amount_inr || bid.amount || bid.amount_inr || ""));
+      setPayment(data?.booking ? { booking: data.booking, order: { status: "pending", amount_inr: data.amount_inr } } : { booking: { status: "pending", payment_status: "unpaid" }, order: { status: "pending" } });
+      setRequestData((prev) => ({ ...(prev || {}), awarded_proposal_id: bid.id, status: "awarded", booking_id: data?.booking?.id }));
+      setBids((current) => current.map((item) => {
+        if (item.id === bid.id) return { ...item, ...accepted, status: accepted.status || "submitted" };
+        if (item.status === "submitted") return { ...item, status: "active" };
+        return item;
+      }));
+      setCheckoutVisible(false);
+      Alert.alert("Request sent", `${bid.priest_name} will accept or decline. Payment opens only after they accept.`);
+      return data;
+    } catch (error) {
+      Alert.alert("Could not select proposal", error?.message || "Try again.");
     } finally { setSelecting(""); }
   };
 
   const submitPayment = async () => {
     const amount = Number(paymentAmount);
     if (!selectedBid) return Alert.alert("Choose a proposal first", "Select the purohit you want before making payment.");
+    if (payment?.booking?.status === "pending") return Alert.alert("Waiting for the purohit", "You can pay after they accept this request.");
+    if (payment?.booking?.status === "rejected") return Alert.alert("Request declined", "This purohit declined. Choose another proposal.");
     if (!amount || amount < 1) return Alert.alert("Invalid proposal", "The selected proposal does not have a payable amount.");
     if (!user?.phone) {
       return Alert.alert(
@@ -398,12 +456,13 @@ export default function RequestProposals({ route, navigation }) {
             <View style={styles.statusIcon}><Clock3 size={19} color={colors.saffron} /></View>
             <Text style={styles.statusLabel}>REQUEST STATUS</Text>
             <Text style={styles.statusTitle}>
-              {loading ? "Finding available purohits" : `${bids.length} proposal${bids.length === 1 ? "" : "s"} received`}
+              {loading ? "Finding available purohits" : priestAccepted ? "Purohit accepted — ready to pay" : awaitingPriest ? "Waiting for the purohit to accept" : rejectedBids.length && !selectedBid ? "A purohit declined — choose another" : `${bids.length} proposal${bids.length === 1 ? "" : "s"} received`}
             </Text>
             <View style={styles.timeline}>
               <TimelineStep label="Request sent" done />
               <TimelineStep label="Purohits reviewing" done={bids.length > 0} />
-              <TimelineStep label={selectedBid ? "Purohit selected" : "Choose an offer"} done={Boolean(selectedBid)} last />
+              <TimelineStep label={selectedBid ? "Purohit selected" : rejectedBids.length ? "Purohit rejected" : "Choose an offer"} done={Boolean(selectedBid) || rejectedBids.length > 0} />
+              <TimelineStep label={priestAccepted ? "Ready to pay" : "Waiting for acceptance"} done={priestAccepted} last />
             </View>
           </View>
         </View>
@@ -430,17 +489,21 @@ export default function RequestProposals({ route, navigation }) {
             {bids.map((bid) => {
               const isSelected = selectedBid?.id === bid.id;
               const isBest = Number(bid.amount) === bestPrice;
+              const rejected = bid.status === "rejected";
+              const notSelected = bid.status === "declined";
+              const waiting = isSelected && awaitingPriest;
+              const ready = isSelected && priestAccepted && !isPaid;
               return (
                 <View
                   key={bid.id}
                   style={[
                     styles.bid,
                     desktop && styles.bidDesktop,
-                    isSelected ? styles.bidSelected : (isBest && styles.bidBest),
+                    rejected ? styles.bidRejected : isSelected ? styles.bidSelected : (isBest && styles.bidBest),
                   ]}
                 >
                   <View style={styles.bidTop}>
-                    <View style={[styles.avatar, isSelected && styles.avatarSelected]}>
+                    <View style={[styles.avatar, isSelected && styles.avatarSelected, rejected && styles.avatarRejected]}>
                       <Text style={styles.avatarText}>{bid.priest_name?.slice(0, 1) || "P"}</Text>
                     </View>
                     <View style={{ flex: 1 }}>
@@ -450,10 +513,19 @@ export default function RequestProposals({ route, navigation }) {
                       </View>
                       <Text style={styles.verified}>Identity and practice verified</Text>
                     </View>
-                    {isSelected ? (
+                    {rejected ? (
+                      <View style={styles.rejectedBadge}>
+                        <X size={14} color={colors.danger} />
+                        <Text style={styles.rejectedBadgeText}>Rejected</Text>
+                      </View>
+                    ) : isSelected ? (
                       <View style={styles.selectedBadge}>
                         <CheckCircle2 size={14} color={colors.brandBrown} />
                         <Text style={styles.selectedBadgeText}>Selected</Text>
+                      </View>
+                    ) : notSelected ? (
+                      <View style={styles.mutedBadge}>
+                        <Text style={styles.mutedBadgeText}>Not selected</Text>
                       </View>
                     ) : null}
                   </View>
@@ -490,13 +562,34 @@ export default function RequestProposals({ route, navigation }) {
                     )}
                   </View>
 
-                  <Button
-                    title={selecting === bid.id ? "Selecting..." : (isSelected ? "Selected ✓" : "Choose this purohit")}
-                    onPress={() => award(bid)}
-                    disabled={Boolean(selecting)}
-                    variant={isSelected ? "secondary" : "primary"}
-                    style={styles.choose}
-                  />
+                  {rejected ? (
+                    <View style={styles.statusStripRejected}>
+                      <X size={15} color={colors.danger} />
+                      <Text style={styles.statusStripRejectedText}>Rejected — this purohit declined</Text>
+                    </View>
+                  ) : waiting ? (
+                    <View style={styles.statusStripSelected}>
+                      <Clock3 size={15} color={colors.brandBrown} />
+                      <Text style={styles.statusStripSelectedText}>Selected — waiting for acceptance</Text>
+                    </View>
+                  ) : ready ? (
+                    <View style={styles.statusStripReady}>
+                      <CheckCircle2 size={15} color={colors.success} />
+                      <Text style={styles.statusStripReadyText}>Accepted — ready to pay</Text>
+                    </View>
+                  ) : notSelected ? (
+                    <View style={styles.statusStripMuted}>
+                      <Text style={styles.statusStripMutedText}>Not selected</Text>
+                    </View>
+                  ) : (
+                    <Button
+                      title={selecting === bid.id ? "Selecting..." : "Choose this purohit"}
+                      onPress={() => award(bid)}
+                      disabled={Boolean(selecting)}
+                      variant="primary"
+                      style={styles.choose}
+                    />
+                  )}
                 </View>
               );
             })}
@@ -510,16 +603,23 @@ export default function RequestProposals({ route, navigation }) {
       </ScrollView>
 
       {/* Sticky Bottom Quick Action Bar when a Purohit is Selected */}
-      {selectedBid && !checkoutVisible ? (
+      {selectedBid && !checkoutVisible && !isPaid ? (
         <View style={[styles.stickyBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
           <View style={styles.stickyLeft}>
             <Text style={styles.stickyPurohit}>{selectedBid.priest_name}</Text>
             <Text style={styles.stickyPrice}>₹{Number(paymentAmount || selectedBid.amount).toLocaleString("en-IN")}</Text>
           </View>
-          <Pressable onPress={() => setCheckoutVisible(true)} style={styles.stickyButton}>
-            <WalletCards size={16} color={colors.white} />
-            <Text style={styles.stickyButtonText}>Review & Pay</Text>
-          </Pressable>
+          {priestAccepted ? (
+            <Pressable onPress={() => setCheckoutVisible(true)} style={styles.stickyButton}>
+              <WalletCards size={16} color={colors.white} />
+              <Text style={styles.stickyButtonText}>Review & Pay</Text>
+            </Pressable>
+          ) : (
+            <View style={styles.stickyWait}>
+              <Clock3 size={15} color={colors.brandBrown} />
+              <Text style={styles.stickyWaitText}>Waiting for acceptance</Text>
+            </View>
+          )}
         </View>
       ) : null}
 
@@ -893,6 +993,8 @@ const styles = bindBrandStyles({
   bidDesktop: { width: "49%" },
   bidBest: { borderColor: "#D4E5D9" },
   bidSelected: { borderColor: colors.brandBrown, backgroundColor: "#FCFAF8" },
+  bidRejected: { borderColor: "#F3C1C1", backgroundColor: "#FFF8F8" },
+  avatarRejected: { backgroundColor: colors.danger },
   bidTop: { flexDirection: "row", alignItems: "center", gap: 11 },
   avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.brandBrown, alignItems: "center", justifyContent: "center" },
   avatarSelected: { backgroundColor: colors.brandBrown },
@@ -902,6 +1004,10 @@ const styles = bindBrandStyles({
   verified: { color: colors.muted2, fontSize: 10, marginTop: 2 },
   selectedBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: "#F5EFEB" },
   selectedBadgeText: { color: colors.brandBrown, fontSize: 10, fontWeight: "700" },
+  rejectedBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: "#FEE2E2" },
+  rejectedBadgeText: { color: colors.danger, fontSize: 10, fontWeight: "700" },
+  mutedBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: colors.muted },
+  mutedBadgeText: { color: colors.muted2, fontSize: 10, fontWeight: "700" },
   priceRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 15, paddingTop: 13, borderTopWidth: 1, borderColor: colors.warmBorder },
   price: { color: colors.ink, fontSize: 22, fontWeight: "700" },
   priceLabel: { color: colors.muted2, fontSize: 9, marginTop: 2 },
@@ -912,6 +1018,14 @@ const styles = bindBrandStyles({
   featureRow: { flexDirection: "row", gap: 6, alignItems: "center", marginTop: 12 },
   featureText: { color: colors.muted2, fontSize: 11, fontWeight: "600" },
   choose: { marginTop: 15 },
+  statusStripSelected: { marginTop: 15, minHeight: 48, borderRadius: 12, borderWidth: 1.5, borderColor: colors.brandBrown, backgroundColor: "#F8F1EE", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 12 },
+  statusStripSelectedText: { color: colors.brandBrown, fontSize: 13, fontWeight: "700" },
+  statusStripRejected: { marginTop: 15, minHeight: 48, borderRadius: 12, borderWidth: 1.5, borderColor: "#F3C1C1", backgroundColor: "#FEF2F2", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 12 },
+  statusStripRejectedText: { color: colors.danger, fontSize: 13, fontWeight: "700" },
+  statusStripReady: { marginTop: 15, minHeight: 48, borderRadius: 12, borderWidth: 1.5, borderColor: "#B7E0C2", backgroundColor: "#F1F8F4", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 12 },
+  statusStripReadyText: { color: colors.success, fontSize: 13, fontWeight: "700" },
+  statusStripMuted: { marginTop: 15, minHeight: 48, borderRadius: 12, backgroundColor: colors.muted, alignItems: "center", justifyContent: "center", paddingHorizontal: 12 },
+  statusStripMutedText: { color: colors.muted2, fontSize: 13, fontWeight: "700" },
   emptyCard: { marginTop: 14, padding: 28, alignItems: "center", backgroundColor: colors.muted, borderRadius: 12 },
   emptyTitle: { color: colors.ink, fontWeight: "700", fontSize: 15 },
   empty: { color: colors.muted2, fontSize: 12, textAlign: "center", marginTop: 7, lineHeight: 18 },
@@ -949,6 +1063,8 @@ const styles = bindBrandStyles({
     gap: 8,
   },
   stickyButtonText: { color: colors.white, fontWeight: "700", fontSize: 14 },
+  stickyWait: { minHeight: 44, paddingHorizontal: 14, borderRadius: 12, backgroundColor: "#F8F1EE", borderWidth: 1.5, borderColor: colors.brandBrown, flexDirection: "row", alignItems: "center", gap: 7 },
+  stickyWaitText: { color: colors.brandBrown, fontWeight: "700", fontSize: 13 },
 
   /* Checkout Bottom Sheet Modal */
   modalOverlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.5)" },

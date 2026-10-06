@@ -1,14 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { bindBrandStyles } from "../../lib/brandStyles";
 import { View, Text, ScrollView, TextInput, Alert, Pressable, Platform, ActivityIndicator, useWindowDimensions } from "react-native";
-import { Info, Send, ShieldCheck, UserRound, WalletCards } from "lucide-react-native";
+import { CheckCircle2, Clock3, Info, Send, ShieldCheck, UserRound, WalletCards, X } from "lucide-react-native";
 import { colors, radii, spacing, font, shadow } from "../../lib/theme";
 import { Button, Card, Field } from "../../components/UI";
 import { useI18n } from "../../lib/i18n";
 import api from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { fetchMarketplacePoojas, fetchMarketplaceProfile } from "../../lib/marketplace";
-import { createBookingRequest } from "../../lib/payments";
+import { createBookingRequest, listBookings, payForBooking } from "../../lib/payments";
 import { getLocalPriest } from "../../data/localPriests";
 import LocationPicker from "../../components/LocationPicker";
 
@@ -55,12 +55,40 @@ export default function Booking({ route, navigation }) {
   const [email, setEmail] = useState("");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
+  const [paying, setPaying] = useState(false);
   const [confirmed, setConfirmed] = useState(null);
   const [errors, setErrors] = useState({});
   const scrollRef = useRef(null);
   const fieldRefs = useRef({});
   const { width } = useWindowDimensions();
   const desktop = width >= 860;
+  const requestStatus = confirmed?.status || "pending";
+  const requestPaid = confirmed?.payment_status === "paid" || requestStatus === "confirmed";
+  const requestRejected = requestStatus === "rejected";
+  const requestCancelled = requestStatus === "cancelled";
+  const requestAccepted = requestStatus === "accepted" && !requestPaid;
+
+  useEffect(() => {
+    const bookingId = confirmed?.id;
+    if (!bookingId || String(bookingId).startsWith("demo-") || requestPaid || requestRejected || requestCancelled) return undefined;
+    const timer = setInterval(() => {
+      listBookings()
+        .then(({ bookings }) => {
+          const next = (bookings || []).find((item) => item.id === bookingId);
+          if (next) {
+            setConfirmed((current) => ({
+              ...current,
+              ...next,
+              priest_name: next.priest_name || current?.priest_name,
+              pooja_name: next.pooja_name || current?.pooja_name,
+              total_amount: next.total_amount || next.total_inr || current?.total_amount,
+            }));
+          }
+        })
+        .catch(() => {});
+    }, 8000);
+    return () => clearInterval(timer);
+  }, [confirmed?.id, requestPaid, requestRejected, requestCancelled]);
 
   useEffect(() => {
     let active = true;
@@ -229,6 +257,8 @@ export default function Booking({ route, navigation }) {
       });
       setConfirmed({
         ...(data.booking || {}),
+        status: data.booking?.status || "pending",
+        payment_status: data.booking?.payment_status || "unpaid",
         priest_name: priest.name,
         pooja_name: pooja.name,
         booking_date: date,
@@ -237,7 +267,7 @@ export default function Booking({ route, navigation }) {
       });
     } catch (e) {
       if (user?.demo) {
-        return setConfirmed({ id: `demo-${Date.now()}`, priest_name: priest.name, pooja_name: pooja.name, booking_date: date, booking_time: time, total_amount: totals.subtotal, invoice_no: "DEMO/0001" });
+        return setConfirmed({ id: `demo-${Date.now()}`, status: "pending", payment_status: "unpaid", priest_name: priest.name, pooja_name: pooja.name, booking_date: date, booking_time: time, total_amount: totals.subtotal });
       }
       const errMsg = e?.message || e?.response?.data?.detail || "Booking failed";
       if (errMsg.includes("not published a price")) {
@@ -264,24 +294,78 @@ export default function Booking({ route, navigation }) {
   const firstErrorKey = REQUIRED_FIELD_ORDER.find((key) => errors[key]);
 
   if (confirmed) {
+    const pay = async () => {
+      if (!requestAccepted) return;
+      setPaying(true);
+      try {
+        if (user?.demo || String(confirmed.id).startsWith("demo-")) {
+          return Alert.alert("Demo checkout", "Sign in with a verified customer account to pay after the purohit accepts.");
+        }
+        const result = await payForBooking(confirmed.id);
+        if (result.order?.status === "paid" || result.booking?.payment_status === "paid") {
+          setConfirmed((current) => ({ ...current, status: "confirmed", payment_status: "paid" }));
+          Alert.alert("Payment confirmed", `${confirmed.priest_name} is booked. The amount stays in escrow until the ceremony is complete.`);
+        } else {
+          Alert.alert("Payment pending", "Cashfree has not confirmed this payment yet. You can try again from My Bookings.");
+        }
+      } catch (error) {
+        Alert.alert("Could not complete payment", error?.message || "Please try again.");
+      } finally { setPaying(false); }
+    };
+
     return (
       <ScrollView contentContainerStyle={[styles.confirmedPage, desktop && styles.contentDesktop]}>
         <View style={{ alignItems: "center" }}>
-          <View style={styles.successIcon}><Send size={30} color={colors.white} strokeWidth={2.6} /></View>
-          <Text style={styles.h1}>{language === "kn" ? "ಬುಕಿಂಗ್ ವಿನಂತಿ ಕಳುಹಿಸಲಾಗಿದೆ" : "Request sent"}</Text>
+          <View style={[styles.successIcon, requestRejected && { backgroundColor: colors.danger }, requestCancelled && { backgroundColor: colors.muted2 }]}>
+            {requestRejected || requestCancelled ? <X size={30} color={colors.white} strokeWidth={2.6} /> : requestAccepted || requestPaid ? <CheckCircle2 size={30} color={colors.white} strokeWidth={2.6} /> : <Send size={30} color={colors.white} strokeWidth={2.6} />}
+          </View>
+          <Text style={styles.h1}>
+            {requestPaid ? "Booking confirmed" : requestRejected ? "Request rejected" : requestCancelled ? "Request cancelled" : requestAccepted ? "Purohit accepted" : "Request sent"}
+          </Text>
           <Text style={styles.sub}>{confirmed.priest_name} · {confirmed.pooja_name}</Text>
           <Text style={styles.sub}>{confirmed.booking_date} · {confirmed.booking_time}</Text>
         </View>
         <Card style={{ marginTop: spacing.xl, ...shadow.card }}>
           <Row label="Booking ID" value={String(confirmed.id).slice(0, 8)} />
-          <Row label="Status" value="Waiting for Purohit" />
-          <Row label="Amount to pay after acceptance" value={`₹${Number(confirmed.total_amount || 0).toLocaleString("en-IN")}`} tone="saffron" />
+          <Row label="Amount" value={`₹${Number(confirmed.total_amount || 0).toLocaleString("en-IN")}`} tone="saffron" />
+          {requestRejected ? (
+            <View style={styles.statusStripRejected}>
+              <X size={15} color={colors.danger} />
+              <Text style={styles.statusStripRejectedText}>Rejected — {confirmed.priest_name} declined</Text>
+            </View>
+          ) : requestCancelled ? (
+            <View style={styles.statusStripMuted}>
+              <Text style={styles.statusStripMutedText}>Cancelled</Text>
+            </View>
+          ) : requestAccepted || requestPaid ? (
+            <View style={styles.statusStripReady}>
+              <CheckCircle2 size={15} color={colors.success} />
+              <Text style={styles.statusStripReadyText}>{requestPaid ? "Paid and confirmed" : "Accepted — ready to pay"}</Text>
+            </View>
+          ) : (
+            <View style={styles.statusStripSelected}>
+              <Clock3 size={15} color={colors.brandBrown} />
+              <Text style={styles.statusStripSelectedText}>Selected — waiting for acceptance</Text>
+            </View>
+          )}
         </Card>
-        <View style={styles.nextSteps}>
-          <Info size={16} color={colors.brandBrown} />
-          <Text style={styles.nextStepsText}>Nothing is charged yet. We’ll notify you when {confirmed.priest_name} accepts, then you can pay securely from My Bookings to confirm.</Text>
-        </View>
-        <Button testID="view-bookings-btn" title="View my bookings" onPress={() => navigation.navigate("Tabs", { screen: "Bookings" })} style={{ marginTop: spacing.xl }} />
+        {requestAccepted ? (
+          <Button title={paying ? "Opening secure checkout…" : `Pay ₹${Number(confirmed.total_amount || 0).toLocaleString("en-IN")} to confirm`} onPress={pay} disabled={paying} style={{ marginTop: spacing.xl }} />
+        ) : (
+          <View style={styles.nextSteps}>
+            <Info size={16} color={requestRejected ? colors.danger : colors.brandBrown} />
+            <Text style={[styles.nextStepsText, requestRejected && { color: colors.danger }]}>
+              {requestRejected
+                ? `${confirmed.priest_name} declined this request. You can choose another purohit.`
+                : requestCancelled
+                  ? "This request was cancelled. Nothing was charged."
+                  : requestPaid
+                    ? "Payment is confirmed. You can message the purohit from My Bookings."
+                    : `Nothing is charged yet. ${confirmed.priest_name} has your request. You can pay here once they accept.`}
+            </Text>
+          </View>
+        )}
+        <Button testID="view-bookings-btn" title="View my bookings" variant={requestAccepted ? "outline" : "primary"} onPress={() => navigation.navigate("Tabs", { screen: "Bookings" })} style={{ marginTop: spacing.md }} />
       </ScrollView>
     );
   }
@@ -552,6 +636,14 @@ const styles = bindBrandStyles({
   eyebrow: { color: colors.saffron, fontSize: 10, fontWeight: "700", letterSpacing: .7, marginTop: 4 }, h1: { fontSize: 28, lineHeight: 34, fontWeight: "700", color: colors.ink, marginTop: 6 },
   sub: { color: colors.muted2, fontSize: 12, marginTop: 4 }, providerSummary: { minHeight: 72, flexDirection: "row", alignItems: "center", gap: 12, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.warmBorder, marginTop: 16 }, providerAvatar: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center", backgroundColor: colors.muted }, providerName: { color: colors.ink, fontSize: 14, fontWeight: "700" },
   steps: { flexDirection: "row", alignItems: "flex-start", justifyContent: "center", marginTop: 22, marginBottom: 28 }, step: { width: 64, alignItems: "center" }, stepNumber: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.muted, alignItems: "center", justifyContent: "center" }, stepNumberActive: { backgroundColor: colors.brandBrown }, stepNumberText: { color: colors.muted2, fontSize: 10, fontWeight: "700" }, stepLabel: { color: colors.muted2, fontSize: 9, marginTop: 5 }, stepLine: { width: 42, height: 1, backgroundColor: colors.warmBorder, marginTop: 14 }, successIcon: { width: 72, height: 72, borderRadius: 36, alignItems: "center", justifyContent: "center", backgroundColor: colors.success, marginBottom: 20 }, nextSteps: { flexDirection: "row", gap: 10, alignItems: "flex-start", marginTop: spacing.md, padding: spacing.md, borderRadius: radii.md, backgroundColor: colors.brandTint }, nextStepsText: { flex: 1, color: colors.brandBrown, fontSize: 12, lineHeight: 18, fontWeight: "600" },
+  statusStripSelected: { marginTop: 14, minHeight: 48, borderRadius: 12, borderWidth: 1.5, borderColor: colors.brandBrown, backgroundColor: "#F8F1EE", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 12 },
+  statusStripSelectedText: { color: colors.brandBrown, fontSize: 13, fontWeight: "700" },
+  statusStripRejected: { marginTop: 14, minHeight: 48, borderRadius: 12, borderWidth: 1.5, borderColor: "#F3C1C1", backgroundColor: "#FEF2F2", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 12 },
+  statusStripRejectedText: { color: colors.danger, fontSize: 13, fontWeight: "700" },
+  statusStripReady: { marginTop: 14, minHeight: 48, borderRadius: 12, borderWidth: 1.5, borderColor: "#B7E0C2", backgroundColor: "#F1F8F4", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 12 },
+  statusStripReadyText: { color: colors.success, fontSize: 13, fontWeight: "700" },
+  statusStripMuted: { marginTop: 14, minHeight: 48, borderRadius: 12, backgroundColor: colors.muted, alignItems: "center", justifyContent: "center", paddingHorizontal: 12 },
+  statusStripMutedText: { color: colors.muted2, fontSize: 13, fontWeight: "700" },
   checkoutGrid: { flexDirection: "row", alignItems: "flex-start", gap: 24 },
   formPane: { flex: 1.45, minWidth: 0 },
   summaryPane: { flex: 0.9, minWidth: 340 },

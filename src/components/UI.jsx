@@ -13,7 +13,7 @@ export function Button({ title, onPress, variant = "primary", disabled, loading,
     variant === "primary" ? tokens.primaryBg :
     variant === "danger" ? colors.danger :
     variant === "ghost" ? "transparent" : colors.white;
-  const fg = variant === "outline" || variant === "ghost" ? tokens.primary : variant === "primary" ? tokens.primaryFg : colors.white;
+  const fg = disabled ? colors.ink : variant === "outline" || variant === "ghost" ? tokens.primary : variant === "primary" ? tokens.primaryFg : variant === "danger" ? colors.white : colors.ink;
   const border = variant === "outline" ? { borderWidth: 1, borderColor: tokens.primary } : variant === "primary" && tokens.buttonStyle !== "solid" ? { borderWidth: 1, borderColor: tokens.primaryBorder } : {};
   const radius = themed ? tokens.radius : radii.md;
   const dimensional = variant === "primary" || variant === "danger";
@@ -44,7 +44,7 @@ export function Button({ title, onPress, variant = "primary", disabled, loading,
         whiteSpace: "nowrap",
         padding: compact ? "0 12px" : "0 20px",
         borderRadius: radius,
-        border: variant === "outline" ? `1px solid ${tokens.primary}` : variant === "primary" && tokens.buttonStyle !== "solid" ? `1px solid ${tokens.primaryBorder}` : "1px solid transparent",
+        border: variant === "outline" ? `1px solid ${tokens.primary}` : variant === "primary" && tokens.buttonStyle !== "solid" ? `1px solid ${tokens.primaryBorder}` : variant === "secondary" ? `1px solid ${colors.warmBorder}` : "1px solid transparent",
         background: bg,
         color: fg,
         display: "inline-flex",
@@ -68,7 +68,7 @@ export function Button({ title, onPress, variant = "primary", disabled, loading,
       onPressIn={() => animate(1)}
       onPressOut={() => animate(0)}
       disabled={disabled || loading}
-      style={({ pressed }) => [styles.btn, compact && styles.btnCompact, dimensional && styles.dimensional, variant === "danger" && styles.dangerDepth, { backgroundColor: bg, borderRadius: radius, opacity: pressed ? 0.9 : 1 }, pressed && dimensional && styles.dimensionalPressed, border]}>
+      style={({ pressed }) => [styles.btn, compact && styles.btnCompact, dimensional && styles.dimensional, variant === "danger" && styles.dangerDepth, variant === "secondary" && styles.secondaryBtn, { backgroundColor: bg, borderRadius: radius, opacity: pressed ? 0.9 : 1 }, pressed && dimensional && styles.dimensionalPressed, border]}>
       {loading ? <ActivityIndicator color={fg} /> : <>
         {Icon ? <Icon size={18} color={fg} strokeWidth={2.2} /> : null}
         <Text style={[styles.btnTxt, { color: fg }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{title}</Text>
@@ -128,6 +128,7 @@ const styles = bindBrandStyles({
   btnCompact: { paddingHorizontal: 12, gap: 6 },
   dimensional: { shadowColor: colors.brandBrownDark, shadowOpacity: .2, shadowRadius: 9, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
   dangerDepth: { shadowColor: "#7F1D1D" },
+  secondaryBtn: { borderWidth: 1, borderColor: colors.warmBorder },
   dimensionalPressed: { shadowOpacity: .03, elevation: 1 },
   btnTxt: { fontSize: font.sizes.base, fontWeight: "700", flexShrink: 1 },
   card: {
