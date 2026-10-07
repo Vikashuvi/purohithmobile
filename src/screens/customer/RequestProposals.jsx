@@ -134,14 +134,17 @@ export default function RequestProposals({ route, navigation }) {
           try {
             const awarded = await selectProposal(request.id, awardedId);
             if (cancelled) return;
+            if (!awarded?.booking?.id) throw new Error("The purohit was not notified.");
             applyLoaded({
               ...data,
-              booking: awarded?.booking || data?.booking,
-              request: { ...data.request, awarded_proposal_id: awardedId, booking_id: awarded?.booking?.id || data?.request?.booking_id },
+              booking: awarded.booking,
+              request: { ...data.request, awarded_proposal_id: awardedId, booking_id: awarded.booking.id },
               proposals: proposalList.map((bid) => bid.id === awardedId ? { ...bid, status: awarded?.proposal?.status || "submitted" } : bid),
             }, proposalList.map((bid) => bid.id === awardedId ? { ...bid, status: awarded?.proposal?.status || "submitted" } : bid));
             return;
-          } catch (_) {}
+          } catch (error) {
+            if (!cancelled) Alert.alert("Purohit was not notified", error?.message || "Select the proposal again.");
+          }
         }
         applyLoaded(data, proposalList);
       })
@@ -203,11 +206,12 @@ export default function RequestProposals({ route, navigation }) {
         return;
       }
       const data = await selectProposal(request.id, bid.id);
+      if (!data?.booking?.id) throw new Error("The purohit was not notified. Select this proposal again.");
       const accepted = data?.proposal || { ...bid, status: "submitted" };
       setSelectedBid(accepted);
       setPaymentAmount(String(data?.amount_inr || bid.amount || bid.amount_inr || ""));
-      setPayment(data?.booking ? { booking: data.booking, order: { status: "pending", amount_inr: data.amount_inr } } : { booking: { status: "pending", payment_status: "unpaid" }, order: { status: "pending" } });
-      setRequestData((prev) => ({ ...(prev || {}), awarded_proposal_id: bid.id, status: "awarded", booking_id: data?.booking?.id }));
+      setPayment({ booking: data.booking, order: { status: "pending", amount_inr: data.amount_inr } });
+      setRequestData((prev) => ({ ...(prev || {}), awarded_proposal_id: bid.id, status: "awarded", booking_id: data.booking.id }));
       setBids((current) => current.map((item) => {
         if (item.id === bid.id) return { ...item, ...accepted, status: accepted.status || "submitted" };
         if (item.status === "submitted") return { ...item, status: "active" };
