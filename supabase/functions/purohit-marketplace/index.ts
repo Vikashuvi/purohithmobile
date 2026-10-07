@@ -99,9 +99,9 @@ Deno.serve(async (req) => {
 
     if (poojaSlug) query = query.contains("pooja_slugs", [poojaSlug]);
     // Bengaluru is the umbrella marketplace location; profiles list its neighborhoods.
-    if (area && area !== "All" && area !== "Bengaluru") query = query.contains("service_areas", [area]);
-    if (language && language !== "All") query = query.contains("languages", [language]);
-    if (minPrice > 0) query = query.gte("max_price_inr", minPrice);
+    // Zone names (South, East, …) are resolved on the client against those neighborhoods.
+    if (area && area !== "All" && area !== "Bengaluru" && !AREA_ZONES.has(area)) query = query.contains("service_areas", [area]);
+    if (minPrice > 0) query = query.gte("starting_price_inr", minPrice);
     if (maxPrice > 0) query = query.lte("starting_price_inr", maxPrice);
 
     const { data, error } = await query;
@@ -120,7 +120,8 @@ Deno.serve(async (req) => {
         ...(profile.pooja_slugs || []),
       ].join(" ").toLowerCase();
       const matchesSearch = !q || searchBlob.includes(q);
-      return matchesSearch;
+      const matchesLanguage = !language || language === "All" || languages.some((item: string) => String(item).trim().toLowerCase() === language.toLowerCase());
+      return matchesSearch && matchesLanguage;
     });
 
     return json({ priests: filtered.map(mapPriest) });
@@ -135,6 +136,8 @@ function json(payload: unknown, status = 200) {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 }
+
+const AREA_ZONES = new Set(["South", "South East", "East", "Central", "West", "North", "North East"]);
 
 function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";

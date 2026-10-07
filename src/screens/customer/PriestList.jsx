@@ -1,26 +1,24 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { bindBrandStyles } from "../../lib/brandStyles";
-import { View, Text, FlatList, Pressable, Image, ScrollView, TextInput, useWindowDimensions } from "react-native";
+import { View, Text, FlatList, Pressable, Image, ScrollView, TextInput, useWindowDimensions, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MapPin, Languages, ShieldCheck, ArrowLeft, ArrowRight, SlidersHorizontal, BadgeCheck, Search, Check, X } from "lucide-react-native";
 import { colors, font } from "../../lib/theme";
 import api, { API_URL } from "../../lib/api";
 import { fetchMarketplacePriests } from "../../lib/marketplace";
-
-const POOJA_FILTERS = [
-  ["all", "All Pujas"], ["gauri-ganesha-vratha", "Gauri Ganesha"], ["rudrabhishek", "Rudra Abhishek"],
-  ["satyanarayan", "Satyanarayana"], ["griha-pravesh", "Griha Pravesh"], ["ayudha-puja", "Ayudha Puja"],
-  ["navagraha-shanti", "Navagraha Shanti"], ["varamahalakshmi-vratha", "Varalakshmi"], ["namakarna", "Namakarna"], ["vivaha", "Vivaha"],
-];
-const LANGUAGE_FILTERS = ["All", "Kannada", "Sanskrit", "Hindi", "Marathi", "Tamil", "Telugu", "English"];
-const AREA_FILTERS = ["All", "Bengaluru", "South India", "Delhi NCR", "Mumbai", "Pune", "North India"];
-const PRICE_BANDS = [
-  { label: "All", min: 0, max: 0 },
-  { label: "₹100 - ₹5K", min: 100, max: 5000 },
-  { label: "₹5K - ₹15K", min: 5000, max: 15000 },
-  { label: "₹15K - ₹50K", min: 15000, max: 50000 },
-  { label: "₹50K - ₹80K", min: 50000, max: 80000 },
-];
+import {
+  AREA_FILTERS,
+  LANGUAGE_FILTERS,
+  POOJA_FILTERS,
+  PRICE_BANDS,
+  labelForCategory,
+  matchesArea,
+  matchesCategory,
+  matchesLanguage,
+  matchesPrice,
+  matchesSearch,
+  normalizeAreaFilter,
+} from "../../lib/priestFilters";
 
 export default function PriestList({ route, navigation }) {
   const insets = useSafeAreaInsets();
@@ -30,42 +28,40 @@ export default function PriestList({ route, navigation }) {
   const tablet = width >= 720;
   const [priests, setPriests] = useState([]);
   const [language, setLanguage] = useState("All");
-  const [areaFilter, setAreaFilter] = useState(area || "All");
+  const [areaFilter, setAreaFilter] = useState(normalizeAreaFilter(area));
   const [category, setCategory] = useState(poojaSlug || "all");
   const [query, setQuery] = useState("");
   const [priceBand, setPriceBand] = useState("All");
   const activePrice = PRICE_BANDS.find((item) => item.label === priceBand) || PRICE_BANDS[0];
   const activePoojaSlug = category === "all" ? "" : category;
+  const heading = category === "all"
+    ? "Purohit marketplace"
+    : (category === poojaSlug && poojaName ? poojaName : labelForCategory(category));
 
   useEffect(() => {
     fetchMarketplacePriests({
       pooja_slug: activePoojaSlug || undefined,
-      area: areaFilter === "All" ? undefined : areaFilter,
       language: language === "All" ? undefined : language,
       query,
       min_price_inr: activePrice.min,
       max_price_inr: activePrice.max,
     })
       .then((data) => setPriests(data?.priests || []))
-      .catch(() => api.get("/priests", { params: { pooja: activePoojaSlug || undefined, area: areaFilter === "All" ? undefined : areaFilter, language: language === "All" ? undefined : language } })
+        .catch(() => api.get("/priests", { params: { pooja: activePoojaSlug || undefined, language: language === "All" ? undefined : language } })
         .then(({ data }) => setPriests(Array.isArray(data) ? data : []))
         .catch(() => setPriests([])));
-  }, [activePoojaSlug, activePrice.max, activePrice.min, areaFilter, language, query]);
+  }, [activePoojaSlug, activePrice.max, activePrice.min, language, query]);
 
   const filtered = useMemo(() => priests.filter((p) => {
     const languages = p.languages || [];
     const areas = p.areas || p.service_areas || [];
     const slugs = p.pooja_slugs || p.pooja_specialties || [];
-    const starting = Number(p.starting_price_inr || 0);
-    const max = Number(p.max_price_inr || starting || 0);
-    const text = [p.name, p.display_name, p.tradition, p.bio, ...languages, ...areas, ...slugs].join(" ").toLowerCase();
-    const matchesLanguage = language === "All" || languages.includes(language);
-    const matchesArea = areaFilter === "All" || areas.some((item) => item.toLowerCase().includes(areaFilter.toLowerCase()));
-    const matchesCategory = category === "all" || slugs.includes(category);
-    const matchesPrice = priceBand === "All" || (max >= activePrice.min && starting <= activePrice.max);
-    const matchesSearch = !query || text.includes(query.toLowerCase());
-    return matchesLanguage && matchesArea && matchesCategory && matchesPrice && matchesSearch;
-  }), [activePrice.max, activePrice.min, areaFilter, category, language, priceBand, priests, query]);
+    return matchesLanguage(languages, language)
+      && matchesArea(areas, areaFilter)
+      && matchesCategory(slugs, category)
+      && matchesPrice(p, activePrice)
+      && matchesSearch(p, query);
+  }), [activePrice, areaFilter, category, language, priests, query]);
 
   const clearAll = () => {
     setLanguage("All");
@@ -113,17 +109,19 @@ export default function PriestList({ route, navigation }) {
           <Text style={[styles.crumb, { fontWeight: "700", color: colors.saffron }]}>Home</Text>
         </Pressable>
         <Text style={styles.crumb}> / Purohits / </Text>
-        <Text style={styles.crumbStrong}>{poojaName || labelForCategory(category)}</Text>
+        <Text style={styles.crumbStrong}>{heading}</Text>
       </View>
-      <View style={styles.titleRow}><Text style={styles.title}>{poojaName || "Purohit marketplace"} <Text style={styles.itemCount}>- {filtered.length} profiles</Text></Text>{desktop ? <Text style={styles.sortBox}>Sort by: Recommended</Text> : null}</View>
+      <View style={styles.titleRow}><Text style={styles.title}>{heading} <Text style={styles.itemCount}>- {filtered.length} profiles</Text></Text>{desktop ? <Text style={styles.sortBox}>Sort by: Recommended</Text> : null}</View>
 
       <View style={styles.shell}>
         {desktop ? <View style={styles.sidebar}>
-          <View style={styles.filterHead}><Text style={styles.filterHeadText}>FILTERS</Text><Pressable onPress={clearAll}><Text style={styles.clear}>CLEAR ALL</Text></Pressable></View>
-          <FilterGroup title="Categories" options={POOJA_FILTERS.map(([value, label]) => ({ value, label }))} value={category} onChange={setCategory} />
-          <FilterGroup title="Languages" options={LANGUAGE_FILTERS.map((item) => ({ value: item, label: item }))} value={language} onChange={setLanguage} />
-          <FilterGroup title="Service Area" options={AREA_FILTERS.map((item) => ({ value: item, label: item }))} value={areaFilter} onChange={setAreaFilter} />
-          <FilterGroup title="Price Range" options={PRICE_BANDS.map((item) => ({ value: item.label, label: item.label }))} value={priceBand} onChange={setPriceBand} />
+          <View style={styles.filterHead}><Text style={styles.filterHeadText}>FILTERS</Text><Pressable onPress={clearAll} accessibilityLabel="Clear all filters"><Text style={styles.clear}>CLEAR ALL</Text></Pressable></View>
+          <ScrollView style={styles.filterScroll} contentContainerStyle={styles.filterScrollContent} showsVerticalScrollIndicator nestedScrollEnabled keyboardShouldPersistTaps="handled">
+            <FilterGroup title="Categories" options={POOJA_FILTERS.map(([value, label]) => ({ value, label }))} value={category} onChange={setCategory} />
+            <FilterGroup title="Languages" options={LANGUAGE_FILTERS.map((item) => ({ value: item, label: item }))} value={language} onChange={setLanguage} />
+            <FilterGroup title="Service area" options={AREA_FILTERS.map((item) => ({ value: item, label: item === "All" ? "All areas" : item }))} value={areaFilter} onChange={setAreaFilter} />
+            <FilterGroup title="Rate range" options={PRICE_BANDS.map((item) => ({ value: item.label, label: item.label === "All" ? "Any rate" : item.label }))} value={priceBand} onChange={setPriceBand} />
+          </ScrollView>
         </View> : null}
 
         <FlatList
@@ -140,7 +138,13 @@ export default function PriestList({ route, navigation }) {
             areaFilter={areaFilter} setAreaFilter={setAreaFilter}
             priceBand={priceBand} setPriceBand={setPriceBand}
             clearAll={clearAll}
-          /> : <ActiveChips category={category} language={language} areaFilter={areaFilter} priceBand={priceBand} clearAll={clearAll} />}
+          /> : <ActiveChips
+            category={category} setCategory={setCategory}
+            language={language} setLanguage={setLanguage}
+            areaFilter={areaFilter} setAreaFilter={setAreaFilter}
+            priceBand={priceBand} setPriceBand={setPriceBand}
+            clearAll={clearAll}
+          />}
           renderItem={({ item }) => <PriestCard item={item} desktop={desktop} onPress={() => navigation.navigate("PriestDetail", { priestId: item.id, poojaSlug: activePoojaSlug || poojaSlug })} />}
           ListEmptyComponent={<View style={styles.empty}><Text style={styles.emptyTitle}>No matching purohits</Text><Text style={styles.emptySub}>Clear filters or try another language, area, or price range.</Text></View>}
         />
@@ -152,7 +156,7 @@ export default function PriestList({ route, navigation }) {
 function FilterGroup({ title, options, value, onChange }) {
   return <View style={styles.filterGroup}><Text style={styles.filterTitle}>{title}</Text>{options.map((item) => {
     const active = item.value === value;
-    return <Pressable key={item.value} onPress={() => onChange(item.value)} style={styles.checkRow}><View style={[styles.checkBox, active && styles.checkBoxActive]}>{active ? <Check size={13} color={colors.white} /> : null}</View><Text style={[styles.checkLabel, active && styles.checkLabelActive]}>{item.label}</Text></Pressable>;
+    return <Pressable key={item.value} testID={`filter-${title}-${item.value}`} accessibilityRole="radio" accessibilityState={{ selected: active }} onPress={() => onChange(item.value)} style={[styles.checkRow, active && styles.checkRowActive]}><View style={[styles.checkBox, active && styles.checkBoxActive]}>{active ? <Check size={13} color={colors.white} /> : null}</View><Text style={[styles.checkLabel, active && styles.checkLabelActive]}>{item.label}</Text></Pressable>;
   })}</View>;
 }
 
@@ -161,8 +165,8 @@ function MobileFilters({ category, setCategory, language, setLanguage, areaFilte
     <View style={styles.mobileFilterTop}><Text style={styles.filterHeadText}>Filters</Text><Pressable onPress={clearAll}><Text style={styles.clear}>Clear all</Text></Pressable></View>
     <ChipRow title="Puja" items={POOJA_FILTERS.map(([value, label]) => ({ value, label }))} value={category} onChange={setCategory} />
     <ChipRow title="Language" items={LANGUAGE_FILTERS.map((item) => ({ value: item, label: item }))} value={language} onChange={setLanguage} />
-    <ChipRow title="Area" items={AREA_FILTERS.map((item) => ({ value: item, label: item }))} value={areaFilter} onChange={setAreaFilter} />
-    <ChipRow title="Price" items={PRICE_BANDS.map((item) => ({ value: item.label, label: item.label }))} value={priceBand} onChange={setPriceBand} />
+    <ChipRow title="Area" items={AREA_FILTERS.map((item) => ({ value: item, label: item === "All" ? "All areas" : item }))} value={areaFilter} onChange={setAreaFilter} />
+    <ChipRow title="Rate" items={PRICE_BANDS.map((item) => ({ value: item.label, label: item.label === "All" ? "Any rate" : item.label }))} value={priceBand} onChange={setPriceBand} />
   </View>;
 }
 
@@ -173,15 +177,15 @@ function ChipRow({ title, items, value, onChange }) {
   })}</ScrollView></View>;
 }
 
-function ActiveChips({ category, language, areaFilter, priceBand, clearAll }) {
+function ActiveChips({ category, setCategory, language, setLanguage, areaFilter, setAreaFilter, priceBand, setPriceBand, clearAll }) {
   const chips = [
-    category !== "all" ? labelForCategory(category) : null,
-    language !== "All" ? language : null,
-    areaFilter !== "All" ? areaFilter : null,
-    priceBand !== "All" ? priceBand : null,
+    category !== "all" ? { key: "category", label: labelForCategory(category), onClear: () => setCategory("all") } : null,
+    language !== "All" ? { key: "language", label: language, onClear: () => setLanguage("All") } : null,
+    areaFilter !== "All" ? { key: "area", label: areaFilter, onClear: () => setAreaFilter("All") } : null,
+    priceBand !== "All" ? { key: "price", label: priceBand, onClear: () => setPriceBand("All") } : null,
   ].filter(Boolean);
   if (!chips.length) return <View style={styles.activeSpacer} />;
-  return <View style={styles.activeChips}>{chips.map((chip) => <View key={chip} style={styles.activeChip}><Text style={styles.activeChipText}>{chip}</Text><X size={13} color={colors.muted2} /></View>)}<Pressable onPress={clearAll}><Text style={styles.clear}>CLEAR ALL</Text></Pressable></View>;
+  return <View style={styles.activeChips}>{chips.map((chip) => <Pressable key={chip.key} onPress={chip.onClear} accessibilityLabel={`Remove ${chip.label} filter`} style={styles.activeChip}><Text style={styles.activeChipText}>{chip.label}</Text><X size={13} color={colors.muted2} /></Pressable>)}<Pressable onPress={clearAll}><Text style={styles.clear}>CLEAR ALL</Text></Pressable></View>;
 }
 
 function PriestCard({ item, desktop, onPress }) {
@@ -190,14 +194,15 @@ function PriestCard({ item, desktop, onPress }) {
   const rating = item.rating ?? item.rating_avg ?? 0;
   const reviews = item.reviews_count ?? item.rating_count ?? 0;
   const areas = item.areas || item.service_areas || [];
-  const starting = item.starting_price_inr || 100;
-  const maxPrice = item.max_price_inr || 80000;
+  const starting = Number(item.starting_price_inr);
+  const maxPrice = Number(item.max_price_inr || item.starting_price_inr);
+  const hasPrice = Number.isFinite(starting) && starting > 0;
   return <Pressable testID={`priest-${item.id}`} onPress={onPress} style={({ pressed }) => [styles.card, desktop && styles.cardDesktop, pressed && styles.cardPressed]}>
     <View style={styles.photoWrap}><Image source={imageSource} style={styles.photo} /><View style={styles.ratingBadge}><Text style={styles.ratingBadgeText}>{Number(rating).toFixed(1)} ★ | {reviews}</Text></View></View>
     <View style={styles.cardBody}>
       <View style={styles.cardTop}><Text numberOfLines={1} style={styles.name}>{item.name}</Text><BadgeCheck size={17} color={colors.ink} /></View>
       <Text numberOfLines={1} style={styles.tradition}>{item.tradition || "Vedic Purohit"}</Text>
-      <Text style={styles.price}>₹{Number(starting).toLocaleString("en-IN")} - ₹{Number(maxPrice).toLocaleString("en-IN")}</Text>
+      <Text style={styles.price}>{hasPrice ? `₹${starting.toLocaleString("en-IN")} - ₹${Number(maxPrice).toLocaleString("en-IN")}` : "Rate on request"}</Text>
       <View style={styles.detail}><Languages size={13} color={colors.muted2} /><Text numberOfLines={1} style={styles.detailText}>{(item.languages || []).join(", ")}</Text></View>
       <View style={styles.detail}><MapPin size={13} color={colors.muted2} /><Text numberOfLines={1} style={styles.detailText}>{areas.join(" · ")}</Text></View>
       <View style={styles.bottomRow}><View style={styles.verified}><ShieldCheck size={13} color={colors.success} /><Text style={styles.verifiedText}>{experience}+ yrs</Text></View><View style={styles.action}><ArrowRight size={15} color={colors.white} /></View></View>
@@ -205,12 +210,8 @@ function PriestCard({ item, desktop, onPress }) {
   </Pressable>;
 }
 
-function labelForCategory(value) {
-  return POOJA_FILTERS.find(([slug]) => slug === value)?.[1] || "All Pujas";
-}
-
 const styles = bindBrandStyles({
-  root: { flex: 1, backgroundColor: colors.white },
+  root: { flex: 1, minHeight: 0, backgroundColor: colors.white, ...(Platform.OS === "web" ? { height: "100vh", maxHeight: "100vh", overflow: "hidden" } : {}) },
   marketHeader: { paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 1, borderColor: colors.warmBorder, flexDirection: "row", alignItems: "center", gap: 10 },
   backBtn: { width: 38, height: 38, borderRadius: 19, borderWidth: 1, borderColor: colors.warmBorder, backgroundColor: colors.white, alignItems: "center", justifyContent: "center" },
   controlPressed: { opacity: 0.7, transform: [{ translateY: 1 }] },
@@ -225,16 +226,19 @@ const styles = bindBrandStyles({
   title: { color: colors.ink, fontSize: 18, fontWeight: "900" },
   itemCount: { color: colors.muted2, fontWeight: "500" },
   sortBox: { minWidth: 220, paddingHorizontal: 18, paddingVertical: 13, borderWidth: 1, borderColor: colors.warmBorder, color: colors.ink, fontWeight: "700" },
-  shell: { flex: 1, flexDirection: "row", borderTopWidth: 1, borderColor: colors.warmBorder },
-  sidebar: { width: 282, borderRightWidth: 1, borderColor: colors.warmBorder, backgroundColor: colors.white },
+  shell: { flex: 1, minHeight: 0, flexDirection: "row", borderTopWidth: 1, borderColor: colors.warmBorder },
+  sidebar: { width: 282, alignSelf: "stretch", minHeight: 0, overflow: "hidden", borderRightWidth: 1, borderColor: colors.warmBorder, backgroundColor: colors.white },
+  filterScroll: { flexGrow: 1, flexShrink: 1, flexBasis: 0, minHeight: 0, ...(Platform.OS === "web" ? { overflowY: "auto" } : {}) },
+  filterScrollContent: { paddingBottom: 28 },
   filterHead: { minHeight: 64, paddingHorizontal: 18, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderBottomWidth: 1, borderColor: colors.warmBorder },
   filterHeadText: { color: colors.ink, fontSize: 15, fontWeight: "900", letterSpacing: .2 },
-  clear: { color: "#FF4F7A", fontSize: 12, fontWeight: "900" },
+  clear: { color: colors.saffron, fontSize: 12, fontWeight: "900" },
   filterGroup: { paddingHorizontal: 18, paddingVertical: 18, borderBottomWidth: 1, borderColor: colors.warmBorder },
   filterTitle: { color: colors.ink, fontSize: 13, fontWeight: "900", marginBottom: 12, textTransform: "uppercase" },
-  checkRow: { minHeight: 31, flexDirection: "row", alignItems: "center", gap: 12 },
-  checkBox: { width: 18, height: 18, borderRadius: 3, borderWidth: 1.3, borderColor: "#C9CBD3", alignItems: "center", justifyContent: "center" },
-  checkBoxActive: { backgroundColor: "#FF4F7A", borderColor: "#FF4F7A" },
+  checkRow: { minHeight: 34, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 8, marginHorizontal: -8, borderRadius: 8 },
+  checkRowActive: { backgroundColor: colors.accentTint },
+  checkBox: { width: 18, height: 18, borderRadius: 4, borderWidth: 1.3, borderColor: colors.warmBorder, alignItems: "center", justifyContent: "center", backgroundColor: colors.white },
+  checkBoxActive: { backgroundColor: colors.brandBrown, borderColor: colors.brandBrown },
   checkLabel: { color: colors.muted2, fontSize: 14, fontWeight: "600" },
   checkLabelActive: { color: colors.ink, fontWeight: "800" },
   results: { flex: 1 },
