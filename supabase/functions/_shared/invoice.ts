@@ -1,7 +1,8 @@
 // GST tax invoice shared by payment-workflow and cashfree-webhook.
 // Line amounts are GST-inclusive (that is what the customer pays); taxable value and
 // CGST/SGST are backed out per line so the printed totals always equal the amount paid.
-// Seller details come from INVOICE_* secrets; empty values are omitted from the document.
+// Seller defaults are SGMS FRESHMINDS SERVICES LLP, as on the GST certificate.
+// INVOICE_* secrets override them; empty values are omitted from the document.
 import { INVOICE_LOGO_DATA_URI } from "./invoice-logo.ts";
 
 export type InvoiceLineItem = {
@@ -30,20 +31,20 @@ function seller() {
   const env = (key: string, fallback = "") => (Deno.env.get(key) || fallback).trim();
   return {
     brand: env("INVOICE_BRAND_NAME", "PurohithConnect™"),
-    legalName: env("INVOICE_LEGAL_NAME", "Purohith Connect"),
-    address: env("INVOICE_ADDRESS"),
+    legalName: env("INVOICE_LEGAL_NAME", "SGMS FRESHMINDS SERVICES LLP"),
+    address: env("INVOICE_ADDRESS", "38, MARUTHI NILAYA, 1ST CROSS, MUTTURAYSWAMY LAYOUT, BEGURU, HULIMAVU, BENGALURU, KARNATAKA 560076"),
     state: env("INVOICE_STATE", "Karnataka"),
     stateCode: env("INVOICE_STATE_CODE", "29"),
-    gstin: env("INVOICE_GSTIN"),
-    pan: env("INVOICE_PAN"),
-    phone: env("INVOICE_PHONE"),
-    email: env("INVOICE_EMAIL"),
+    gstin: env("INVOICE_GSTIN", "29AEQFS5976P1ZK"),
+    pan: env("INVOICE_PAN", "AEQFS5976P"),
+    phone: env("INVOICE_PHONE", "911048636"),
+    email: env("INVOICE_EMAIL", "admin@freshmindsservices.com"),
     website: env("INVOICE_WEBSITE", "purohithconnect.com"),
     bankName: env("INVOICE_BANK_NAME"),
     bankAccountName: env("INVOICE_BANK_ACCOUNT_NAME"),
     bankAccountNumber: env("INVOICE_BANK_ACCOUNT_NUMBER"),
     bankIfsc: env("INVOICE_BANK_IFSC"),
-    upiId: env("INVOICE_UPI_ID"),
+    upiId: env("INVOICE_UPI_ID", "sgmsfreshmindsservicesllp.8050934625.ibz@icici"),
   };
 }
 
@@ -191,8 +192,8 @@ table.tax .num{text-align:right}
   <section class="parties">
     <div>
       <div class="label">Billed By</div>
-      <div class="party-name maroon">${esc(s.brand)}</div>
-      ${s.legalName !== s.brand ? `<div class="kv">${esc(s.legalName)}</div>` : ""}
+      <div class="party-name maroon">${esc(s.legalName)}</div>
+      ${s.brand && s.brand !== s.legalName ? `<div class="kv">${esc(s.brand)}</div>` : ""}
       ${s.address ? `<div class="kv">${esc(s.address)}</div>` : ""}
       ${kv("GSTIN", s.gstin)}
       ${kv("PAN", s.pan)}
@@ -256,10 +257,9 @@ table.tax .num{text-align:right}
     <div>
       <div class="label">Terms &amp; Notes</div>
       <ul>
-        <li>Dakshina is offered with respect to the purohith for performing the ceremony.</li>
-        <li>Samagri charges apply only when purohith-provided samagri is selected.</li>
-        <li>Prices are inclusive of the itemised amounts above; there are no hidden charges.</li>
-        <li>Cancellations 24+ hrs before the muhurta are fully refundable (excl. gateway fees).</li>
+        <li>The amount is one ceremony total. Dakshina, samagri, and travel are not billed as separate lines.</li>
+        <li>Prices are inclusive of the amount above; there are no hidden charges.</li>
+        <li>Cancellations 48+ hrs before the muhurta are fully refundable (excl. gateway fees).</li>
       </ul>
     </div>
   </section>
@@ -268,7 +268,7 @@ table.tax .num{text-align:right}
     <div class="blessing">|| ಶುಭಮಸ್ತು ||</div>
     <div class="signatory">
       <div class="line">Authorised Signatory</div>
-      <div class="for">for ${esc(s.brand)}</div>
+      <div class="for">for ${esc(s.legalName)}</div>
     </div>
   </section>
 
@@ -304,8 +304,8 @@ export function renderBookingInvoice({ invoiceNumber, booking, amountInr, paymen
     },
     payment,
     items: [{
-      description: `${ceremony} — Purohith performance & Dakshina`,
-      detail: [priest ? `Performed by ${priest}` : "", "Verified purohith"].filter(Boolean).join(" · "),
+      description: ceremony,
+      detail: [priest ? `Performed by ${priest}` : "", "Ceremony total"].filter(Boolean).join(" · "),
       sac: DEFAULT_SAC,
       quantity: 1,
       unit: "Service",

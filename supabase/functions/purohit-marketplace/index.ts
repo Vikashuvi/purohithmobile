@@ -48,7 +48,6 @@ Deno.serve(async (req) => {
         .select("id,user_id,slug,display_name,profile_headline,bio,years_experience,languages,service_areas,pooja_slugs,photo_url,portfolio_urls,verification_status,rating,review_count,tradition,availability_notes,starting_price_inr,max_price_inr,primary_service_area")
         .eq("verification_status", "verified")
         .eq("is_listed", true)
-        .not("photo_url", "is", null)
         .not("submitted_at", "is", null);
       profileQuery = priestId ? profileQuery.eq("id", priestId) : profileQuery.eq("slug", priestSlug);
       const { data, error } = await profileQuery.maybeSingle();
@@ -92,7 +91,6 @@ Deno.serve(async (req) => {
       .select("id,user_id,slug,display_name,profile_headline,bio,years_experience,languages,service_areas,pooja_slugs,photo_url,portfolio_urls,verification_status,rating,review_count,tradition,availability_notes,starting_price_inr,max_price_inr,primary_service_area")
       .eq("verification_status", "verified")
       .eq("is_listed", true)
-      .not("photo_url", "is", null)
       .not("submitted_at", "is", null)
       .order("rating", { ascending: false })
       .limit(200);

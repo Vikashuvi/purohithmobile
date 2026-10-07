@@ -6,7 +6,7 @@ import { CalendarCheck2, CalendarClock, Check, ChevronRight, Clock3, History, Ma
 import { useNavigation } from "@react-navigation/native";
 import { colors } from "../../lib/theme";
 import { Button } from "../../components/UI";
-import { downloadInvoice, listBookings, listPaymentReports, updateProviderBooking } from "../../lib/payments";
+import { downloadInvoice, listBookings, listPaymentReports, showAppAlert, updateProviderBooking } from "../../lib/payments";
 import { useAuth } from "../../lib/auth";
 import { startInAppCall } from "../../lib/calls";
 
@@ -132,7 +132,7 @@ function PreviousRow({ booking }) {
       <View style={styles.location}><MapPin size={12} color={colors.muted2} /><Text style={styles.locationText} numberOfLines={1}>{booking.address}</Text></View>
       <View style={styles.previousFoot}>
         <Text style={styles.price}>₹{amount(booking).toLocaleString("en-IN")}{booking.payment_status === "paid" ? "" : booking.payment_status === "refunded" ? " · refunded" : " · not paid"}</Text>
-        {invoice ? <Pressable accessibilityLabel="Download invoice" onPress={() => downloadInvoice(invoice, booking.payment_report.invoice_number).catch((error) => Alert.alert("Invoice unavailable", error?.message || "Please try again."))} style={styles.iconAction}><ReceiptText size={17} color={colors.ink} /></Pressable> : null}
+        {invoice ? <Pressable accessibilityLabel="Download invoice" onPress={() => downloadInvoice(invoice, booking.payment_report.invoice_number).catch((error) => showAppAlert("Invoice unavailable", error?.message || "Please try again."))} style={styles.iconAction}><ReceiptText size={17} color={colors.ink} /></Pressable> : null}
       </View>
     </View>
   </View>;

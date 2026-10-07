@@ -1,10 +1,20 @@
-import { Linking, Platform } from "react-native";
+import { Alert, Linking, Platform } from "react-native";
+import * as FileSystem from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
+import { INVOICE_LOGO_DATA_URI } from "../../supabase/functions/_shared/invoice-logo";
+import { downloadInvoicePdf } from "./invoicePdf";
 import { supabase, supabaseConfig } from "./supabase";
 import { openCashfreeCheckout } from "./cashfreeCheckout";
 export { openCashfreeCheckout };
+
+function ensureInvoiceLogo(invoiceHtml) {
+  if (!invoiceHtml || invoiceHtml.includes('class="logo"')) return invoiceHtml;
+  const img = `<img class="logo" src="${INVOICE_LOGO_DATA_URI}" alt="PurohithConnect">`;
+  if (!invoiceHtml.includes('<header class="head">')) return invoiceHtml;
+  return invoiceHtml.replace('<header class="head">', `<header class="head">\n    ${img}`);
+}
 
 export const PUROHITH_UPI_ID = "sgmsfreshmindsservicesllp.8050934625.ibz@icici";
 export const PUROHITH_PAYEE_NAME = "SGMS Freshminds Services LLP";
@@ -297,22 +307,33 @@ export async function pickPaymentScreenshot() {
   };
 }
 
+export function showAppAlert(title, message) {
+  const text = [title, message].filter(Boolean).join("\n");
+  if (Platform.OS === "web" && typeof window !== "undefined" && typeof window.alert === "function") {
+    window.alert(text);
+    return;
+  }
+  Alert.alert(title, message);
+}
+
 export async function downloadInvoice(invoiceHtml, invoiceNumber = "purohith-connect-invoice") {
   if (!invoiceHtml) return false;
+  const html = ensureInvoiceLogo(invoiceHtml);
+  const safeName = String(invoiceNumber || "invoice").replace(/[^\w.-]+/g, "-");
   if (Platform.OS === "web") {
-    const blob = new Blob([invoiceHtml], { type: "text/html;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${invoiceNumber}.html`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    return true;
+    const preview = typeof window !== "undefined" ? window.open("about:blank", "_blank") : null;
+    try {
+      await downloadInvoicePdf(html, safeName, preview);
+      return true;
+    } catch (error) {
+      if (preview && !preview.closed) preview.close();
+      throw error;
+    }
   }
-  const { uri } = await Print.printToFileAsync({ html: invoiceHtml });
-  if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: `Invoice ${invoiceNumber}`, UTI: "com.adobe.pdf" });
-  else await Print.printAsync({ html: invoiceHtml });
+  const { uri } = await Print.printToFileAsync({ html });
+  const target = FileSystem.cacheDirectory ? `${FileSystem.cacheDirectory}${safeName}.pdf` : uri;
+  if (target !== uri) await FileSystem.copyAsync({ from: uri, to: target });
+  if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(target, { mimeType: "application/pdf", dialogTitle: `Invoice ${safeName}`, UTI: "com.adobe.pdf" });
+  else await Print.printAsync({ html });
   return true;
 }

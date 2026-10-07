@@ -28,6 +28,7 @@ import { useAuth } from "../../lib/auth";
 import {
   createCashfreeOrder,
   downloadInvoice,
+  showAppAlert,
   listRequestProposals,
   openCashfreeCheckout,
   selectProposal,
@@ -399,8 +400,9 @@ export default function RequestProposals({ route, navigation }) {
                 {currentInvoiceHtml ? (
                   <Pressable
                     onPress={() => {
-                      const downloaded = downloadInvoice(currentInvoiceHtml, currentInvoiceNo);
-                      if (!downloaded && Platform.OS !== "web") Alert.alert("Invoice ready", `Invoice ${currentInvoiceNo} saved.`);
+                      downloadInvoice(currentInvoiceHtml, currentInvoiceNo).catch((error) => {
+                        showAppAlert("Invoice unavailable", error?.message || "Please try again.");
+                      });
                     }}
                     style={styles.invoiceDownloadBtn}
                   >
@@ -698,8 +700,9 @@ export default function RequestProposals({ route, navigation }) {
                 {payment.booking.invoice_html ? (
                   <Pressable
                     onPress={() => {
-                      const downloaded = downloadInvoice(payment.booking.invoice_html, payment.booking.invoice_no);
-                      if (!downloaded && Platform.OS !== "web") Alert.alert("Invoice ready", `Invoice ${payment.booking.invoice_no} saved.`);
+                      downloadInvoice(payment.booking.invoice_html, payment.booking.invoice_no).catch((error) => {
+                        showAppAlert("Invoice unavailable", error?.message || "Please try again.");
+                      });
                     }}
                     style={styles.downloadButton}
                   >

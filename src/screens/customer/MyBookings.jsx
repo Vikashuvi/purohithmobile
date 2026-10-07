@@ -6,7 +6,7 @@ import { colors, radii, spacing, font } from "../../lib/theme";
 import { Button, Field } from "../../components/UI";
 import { EmptyState, StatusBadge } from "../../components/ProductUI";
 import api from "../../lib/api";
-import { downloadInvoice, listBookings, listCustomerRequests, listPaymentReports, payForBooking } from "../../lib/payments";
+import { downloadInvoice, listBookings, listCustomerRequests, listPaymentReports, payForBooking, showAppAlert } from "../../lib/payments";
 import { useI18n } from "../../lib/i18n";
 import { useAuth } from "../../lib/auth";
 import { startInAppCall } from "../../lib/calls";
@@ -128,9 +128,9 @@ export default function MyBookings({ navigation }) {
   };
   const openInvoice = async (b) => {
     const report = b.payment_report;
-    if (!report?.invoice_html) return Alert.alert("Invoice pending", "The invoice will appear after Cashfree confirms the payment.");
+    if (!report?.invoice_html) return showAppAlert("Invoice pending", "The invoice will appear after Cashfree confirms the payment.");
     try { await downloadInvoice(report.invoice_html, report.invoice_number); }
-    catch (error) { Alert.alert("Invoice unavailable", error?.message || "Please try again."); }
+    catch (error) { showAppAlert("Invoice unavailable", error?.message || "Please try again."); }
   };
 
   const payNow = async (b) => {
