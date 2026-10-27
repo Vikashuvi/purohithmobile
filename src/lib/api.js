@@ -5,6 +5,7 @@ import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
+import { supabase } from "./supabase";
 
 const EXTRA = Constants.expoConfig?.extra || Constants.manifest?.extra || {};
 export const API_URL = (EXTRA.apiUrl || "").replace(/\/$/, "");
@@ -39,12 +40,15 @@ export const tokens = {
   async getRole() { return storage.get(ROLE_KEY); },
   async setUser(u) { await storage.set(USER_KEY, JSON.stringify(u || {})); },
   async getUser() { const s = await storage.get(USER_KEY); return s ? JSON.parse(s) : null; },
-  async clear() {
+  async clearSession() {
     await Promise.all([
       storage.del(ACCESS_KEY),
       storage.del(REFRESH_KEY),
       storage.del(USER_KEY),
     ]);
+  },
+  async clear() {
+    await Promise.all([tokens.clearSession(), storage.del(ROLE_KEY)]);
   },
 };
 
@@ -52,6 +56,8 @@ const api = axios.create({ baseURL: API, timeout: 20000 });
 
 // Attach access token
 api.interceptors.request.use(async (config) => {
+  // Supabase manages its own bearer token. Do not forward it to the legacy API.
+  if (supabase && (await supabase.auth.getSession()).data?.session) return config;
   const t = await tokens.getAccess();
   if (t) config.headers.Authorization = `Bearer ${t}`;
   return config;
@@ -63,6 +69,7 @@ api.interceptors.response.use(
   (r) => r,
   async (err) => {
     const original = err.config;
+    if (supabase && (await supabase.auth.getSession()).data?.session) return Promise.reject(err);
     if (err.response?.status === 401 && !original._retry) {
       original._retry = true;
       try {

@@ -635,7 +635,7 @@ export default function RequestProposals({ route, navigation }) {
           <Pressable style={styles.modalBackdrop} onPress={() => !paying && setCheckoutVisible(false)} />
           <View style={[styles.modalSheet, { paddingBottom: Math.max(insets.bottom, 20) }]}>
             <View style={styles.modalHandle} />
-            
+
             <View style={styles.modalHeader}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.modalKicker}>CONFIRM PUROHIT</Text>

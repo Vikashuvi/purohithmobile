@@ -1,6 +1,6 @@
-import React, { useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { bindBrandStyles } from "../lib/brandStyles";
-import { ActivityIndicator, Animated, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Animated, Image, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import {
   ArrowLeft,
   ArrowRight,
@@ -197,11 +197,15 @@ export function SectionTitle({ title, subtitle, action, style }) {
   );
 }
 
-export function Avatar({ name = "P", size = 48, verified = false, style }) {
+export function Avatar({ name = "P", uri, size = 48, verified = false, style }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  useEffect(() => { setImageFailed(false); }, [uri]);
   return (
     <View style={[styles.avatarWrap, { width: size, height: size }, style]}>
       <View style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}>
-        <Text style={[styles.avatarText, { fontSize: Math.round(size * .38) }]}>{name.slice(0, 1).toUpperCase()}</Text>
+        {uri && !imageFailed
+          ? <Image source={{ uri }} onError={() => setImageFailed(true)} style={{ width: size, height: size, borderRadius: size / 2 }} />
+          : <Text style={[styles.avatarText, { fontSize: Math.round(size * .38) }]}>{name.slice(0, 1).toUpperCase()}</Text>}
       </View>
       {verified ? <View style={styles.avatarVerified}><Check size={10} color={colors.white} strokeWidth={3} /></View> : null}
     </View>

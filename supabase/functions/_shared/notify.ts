@@ -3,6 +3,7 @@
 // 2. Expo push to registered devices (public.push_tokens)
 // 3. Engagespot, when ENGAGESPOT_API_KEY and ENGAGESPOT_API_SECRET are set
 // Delivery failures never throw: a booking action must not fail because a push did.
+import { sendWebPush } from "./webPush.ts";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 const ENGAGESPOT_URL = "https://api.engagespot.co/v3";
@@ -45,19 +46,34 @@ export async function notifyUsers(supabase: any, input: NotificationInput) {
     console.warn("app_notifications insert failed", String((error as Error)?.message || error));
   }
 
-  const [push, engagespot] = await Promise.all([
+  const [push, webPush, engagespot] = await Promise.all([
     sendExpoPush(supabase, userIds, input.title, body, data),
+    sendWebPush(supabase, userIds, { title: input.title, body, data }).catch((error) => {
+      console.warn("Web push failed", String((error as Error)?.message || error));
+      return { sent: 0, failed: 0, subscriptions: 0 };
+    }),
     sendEngagespot(userIds, input.title, body, data),
   ]);
-  return { inApp, push, engagespot };
+  await recordPushAnalytics(supabase, input.type, push, {
+    bookingId: input.bookingId || null,
+    requestId: input.requestId || null,
+  });
+  if (webPush.sent || webPush.failed) {
+    await supabase.from("notification_delivery_events").insert([
+      webPush.sent ? { notification_type: input.type, channel: "push", platform: "web", event: "sent", event_count: webPush.sent } : null,
+      webPush.failed ? { notification_type: input.type, channel: "push", platform: "web", event: "failed", event_count: webPush.failed } : null,
+    ].filter(Boolean));
+  }
+  return { inApp, push: push.sent, pushFailed: push.failed, webPush: webPush.sent, engagespot };
 }
 
 async function sendExpoPush(supabase: any, userIds: string[], title: string, body: string, data: Record<string, unknown>) {
   try {
-    const { data: tokens } = await supabase.from("push_tokens").select("token").in("user_id", userIds);
-    if (!tokens?.length) return 0;
-    const messages = tokens.map(({ token }: { token: string }) => ({
+    const { data: tokens } = await supabase.from("push_tokens").select("token,platform").in("user_id", userIds);
+    if (!tokens?.length) return { sent: 0, failed: 0, byPlatform: {} as Record<string, { sent: number; failed: number }> };
+    const messages = tokens.map(({ token, platform }: { token: string; platform?: string }) => ({
       to: token,
+      platform: platform || "unknown",
       title,
       body,
       sound: "default",
@@ -66,25 +82,54 @@ async function sendExpoPush(supabase: any, userIds: string[], title: string, bod
       data,
     }));
     let sent = 0;
+    let failed = 0;
+    const byPlatform: Record<string, { sent: number; failed: number }> = {};
     for (let index = 0; index < messages.length; index += 100) {
       const batch = messages.slice(index, index + 100);
       const response = await fetch(EXPO_PUSH_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify(batch),
+        body: JSON.stringify(batch.map(({ platform: _platform, ...message }: any) => message)),
       });
       const result = await response.json().catch(() => ({}));
       const tickets = Array.isArray(result?.data) ? result.data : [];
-      sent += tickets.filter((ticket: any) => ticket?.status === "ok").length;
+      batch.forEach((message: any, ticketIndex: number) => {
+        const platform = message.platform || "unknown";
+        byPlatform[platform] ||= { sent: 0, failed: 0 };
+        if (tickets[ticketIndex]?.status === "ok") {
+          sent += 1;
+          byPlatform[platform].sent += 1;
+        } else {
+          failed += 1;
+          byPlatform[platform].failed += 1;
+        }
+      });
       const stale = tickets
         .map((ticket: any, ticketIndex: number) => ticket?.details?.error === "DeviceNotRegistered" ? batch[ticketIndex].to : null)
         .filter(Boolean);
       if (stale.length) await supabase.from("push_tokens").delete().in("token", stale);
     }
-    return sent;
+    return { sent, failed, byPlatform };
   } catch (error) {
     console.warn("Expo push failed", String((error as Error)?.message || error));
-    return 0;
+    return { sent: 0, failed: 0, byPlatform: {} as Record<string, { sent: number; failed: number }> };
+  }
+}
+
+async function recordPushAnalytics(
+  supabase: any,
+  notificationType: string,
+  delivery: { sent: number; failed: number; byPlatform: Record<string, { sent: number; failed: number }> },
+  metadata: Record<string, unknown>,
+) {
+  try {
+    const rows = Object.entries(delivery.byPlatform).flatMap(([platform, counts]) => [
+      counts.sent ? { notification_type: notificationType, channel: "push", event: "sent", platform, event_count: counts.sent, metadata } : null,
+      counts.failed ? { notification_type: notificationType, channel: "push", event: "failed", platform, event_count: counts.failed, metadata } : null,
+    ]).filter(Boolean);
+    if (rows.length) await supabase.from("notification_delivery_events").insert(rows);
+  } catch (error) {
+    console.warn("Notification analytics insert failed", String((error as Error)?.message || error));
   }
 }
 

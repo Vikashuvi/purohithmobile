@@ -25,6 +25,13 @@ async function configureChannels() {
       vibrationPattern: [0, 250, 250, 250],
       lightColor: "#EA580C",
     });
+    await Notifications.setNotificationChannelAsync("marketing", {
+      name: "Offers and announcements",
+      description: "Festival reminders, new services, and Purohith Connect updates",
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: "#EA580C",
+    });
   }
 }
 

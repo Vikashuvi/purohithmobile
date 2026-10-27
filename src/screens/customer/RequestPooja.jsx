@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { bindBrandStyles } from "../../lib/brandStyles";
 import { Alert, Platform, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { ChevronRight, MapPin, Sparkles, WalletCards } from "lucide-react-native";
@@ -6,6 +6,7 @@ import { colors, radii, spacing } from "../../lib/theme";
 import LocationPicker from "../../components/LocationPicker";
 import { useAuth } from "../../lib/auth";
 import { createCeremonyRequest } from "../../lib/payments";
+import { fetchMarketplaceSettings } from "../../lib/marketplace";
 
 const CEREMONIES = [
   ["gauri-ganesha-vratha", "Gauri and Ganesha Vratha"], ["rudrabhishek", "Rudra Abhishek"],
@@ -42,9 +43,12 @@ export default function RequestPooja({ navigation, route }) {
   const [budgetMax, setBudgetMax] = useState("");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
+  const [biddingEnabled, setBiddingEnabled] = useState(false);
+  useEffect(() => { fetchMarketplaceSettings().then((settings) => setBiddingEnabled(settings.bidding_enabled === true)).catch(() => setBiddingEnabled(false)); }, []);
   const ceremony = useMemo(() => CEREMONIES.find(([slug]) => slug === poojaSlug), [poojaSlug]);
 
   const submit = async () => {
+    if (!biddingEnabled) return Alert.alert("Book a priest directly", "Browse profiles and choose a published ceremony price.");
     if (address.trim().length < 8) return Alert.alert("Add your service address", "Purohits need an area or address to prepare their proposal.");
     if (!coords) return Alert.alert("Pin your location", "Search for your address, use current location, or tap the map so purohits can see the ceremony area.");
     if (!user?.id || user?.demo) {
@@ -72,6 +76,7 @@ export default function RequestPooja({ navigation, route }) {
     } finally { setBusy(false); }
   };
 
+  if (!biddingEnabled) return <View style={[styles.root, { padding: 24, justifyContent: "center", alignItems: "center" }]}><Text style={styles.title}>Book a priest directly</Text><Text style={styles.sub}>Browse verified profiles, choose a pooja, and see the full price before requesting a booking.</Text><Pressable onPress={() => navigation.replace("PriestList", { poojaSlug })} style={[styles.submitButton, { paddingHorizontal: 22, marginTop: 20 }]}><Text style={styles.submitButtonText}>Browse priests</Text></Pressable></View>;
   return <View style={styles.root}>
     <ScrollView contentContainerStyle={[styles.content, desktop && styles.contentDesktop]} keyboardShouldPersistTaps="handled">
       <View style={styles.intro}><View style={styles.mark}><Sparkles size={19} color={colors.saffron} /></View><View style={{ flex: 1 }}><Text style={styles.kicker}>REQUEST PROPOSALS</Text><Text style={styles.title}>Let the right purohits come to you.</Text><Text style={styles.sub}>Verified priests can respond with their price, availability, and a personal note.</Text></View></View>

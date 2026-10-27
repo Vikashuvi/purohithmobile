@@ -11,6 +11,7 @@ import { tokens } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import BrandLogo from "../components/BrandLogo";
 import { isSupabaseConfigured, supabase, supabaseConfig } from "../lib/supabase";
+import { isFirebaseGoogleConfigured, signInWithFirebaseGoogle, signOutFirebaseGoogle } from "../lib/firebaseGoogle";
 
 const OTP_LENGTH = 8;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -36,10 +37,30 @@ async function priestPasswordLogin(identifier, password) {
   return sessionData?.session;
 }
 
+async function saveMissingGoogleProfile(userId, credential) {
+  const { data: current, error: readError } = await supabase
+    .from("app_users")
+    .select("full_name,avatar_url")
+    .eq("id", userId)
+    .single();
+  if (readError) throw readError;
+
+  const fullName = typeof credential.fullName === "string" ? credential.fullName.trim().slice(0, 160) : "";
+  const photoUrl = typeof credential.photoUrl === "string" && credential.photoUrl.startsWith("https://") ? credential.photoUrl.slice(0, 2048) : "";
+  const updates = {};
+  if (!current.full_name && fullName) updates.full_name = fullName;
+  if (!current.avatar_url && photoUrl) updates.avatar_url = photoUrl;
+  if (!Object.keys(updates).length) return;
+  updates.updated_at = new Date().toISOString();
+
+  const { error } = await supabase.from("app_users").update(updates).eq("id", userId);
+  if (error) throw error;
+}
+
 export default function Login() {
   const insets = useSafeAreaInsets();
   const { t } = useI18n();
-  const { role, resetRole, restoreWithBiometric, applySupabaseSession } = useAuth();
+  const { role, resetRole, restoreWithBiometric, applySupabaseSession, beginInteractiveAuth, endInteractiveAuth } = useAuth();
   const isPriest = role === "priest";
   const minPassword = isPriest ? 12 : 8;
   const [email, setEmail] = useState("");
@@ -155,19 +176,23 @@ export default function Login() {
       return;
     }
     setLoading(true);
+    beginInteractiveAuth();
+    let openedSession = false;
     setNotice("Verifying your secure email code...");
     try {
       const { data, error } = await supabase.auth.verifyOtp({ email: normalized, token: normalizedOtp, type: "email" });
       if (error) throw error;
       if (!data?.session?.user) throw new Error("Verification completed without a session. Request a new code and try again.");
+      openedSession = true;
       if (passwordToSet) {
         const { error: passwordError } = await supabase.auth.updateUser({ password: passwordToSet });
         if (passwordError) throw new Error(`Signed in, but the password could not be saved: ${passwordError.message}`);
       }
-      const nextUser = await applySupabaseSession(data.session, role);
+      const nextUser = await applySupabaseSession(data.session, role, role);
       if (!nextUser) throw new Error("Your session could not be opened. Request a new code and try again.");
       setNotice(passwordToSet ? "Password saved. Opening your account..." : "Email verified. Opening your account...");
     } catch (e) {
+      if (openedSession) await supabase.auth.signOut({ scope: "local" }).catch(() => {});
       setNotice("");
       const message = e?.message || "Invalid verification code";
       const friendlyMessage = /expired|invalid|token/i.test(message) && !/password/i.test(message)
@@ -175,7 +200,7 @@ export default function Login() {
         : message;
       setFormError(friendlyMessage);
       if (Platform.OS !== "web") Alert.alert("Verify failed", friendlyMessage);
-    } finally { setLoading(false); }
+    } finally { endInteractiveAuth(); setLoading(false); }
   };
 
   const signInWithPassword = async () => {
@@ -189,15 +214,19 @@ export default function Login() {
     if (!password) return setFormError("Enter your password.");
     if (!isSupabaseConfigured || !supabase) return setFormError("Sign in is temporarily unavailable. Please try again shortly.");
     setLoading(true);
+    beginInteractiveAuth();
+    let openedSession = false;
     setNotice("Signing you in...");
     try {
       let session;
       session = await priestPasswordLogin(id, password);
       if (!session?.user) throw new Error("Sign in did not return a session. Please try again.");
-      const nextUser = await applySupabaseSession(session, role);
+      openedSession = true;
+      const nextUser = await applySupabaseSession(session, role, role);
       if (!nextUser) throw new Error("Your session could not be opened. Please try again.");
       setNotice("Signed in. Opening your account...");
     } catch (e) {
+      if (openedSession) await supabase.auth.signOut({ scope: "local" }).catch(() => {});
       setNotice("");
       const message = e?.message || "Sign in failed";
       const friendlyMessage = /invalid|credentials/i.test(message)
@@ -209,12 +238,74 @@ export default function Login() {
           : message;
       setFormError(friendlyMessage);
       if (Platform.OS !== "web") Alert.alert("Sign in failed", friendlyMessage);
-    } finally { setLoading(false); }
+    } finally { endInteractiveAuth(); setLoading(false); }
   };
 
   const tryBiometric = async () => {
     const ok = await restoreWithBiometric();
     if (!ok) Alert.alert("Session expired", "Please sign in with OTP again.");
+  };
+
+  const signInWithGoogle = async () => {
+    clearMessages();
+    if (!isSupabaseConfigured || !supabase || !isFirebaseGoogleConfigured) {
+      setFormError("Google sign-in is being configured. Please use email for now.");
+      return;
+    }
+    setLoading(true);
+    beginInteractiveAuth();
+    let openedSession = false;
+    try {
+      const credential = await signInWithFirebaseGoogle();
+      const { data, error } = await supabase.auth.signInWithIdToken({
+        provider: "google",
+        token: credential.idToken,
+        access_token: credential.accessToken,
+      });
+      if (error) throw error;
+      if (!data?.session?.user) throw new Error("Google sign-in did not return an account session.");
+      openedSession = true;
+      const { data: verified, error: verifyError } = await supabase.auth.getUser();
+      if (verifyError || verified?.user?.id !== data.user.id) {
+        throw verifyError || new Error("Supabase could not verify your Google session. Please try again.");
+      }
+      const createdRecently = Date.now() - new Date(data.user.created_at).getTime() < 30 * 60 * 1000;
+      if (role === "priest" && createdRecently) {
+        const { data: claimed, error: roleError } = await supabase.rpc("claim_google_priest_role");
+        if (roleError) throw new Error(`Priest account setup failed: ${roleError.message}`);
+        if (!claimed) throw new Error("This Google account could not start priest onboarding. Please contact support.");
+      }
+      try {
+        await saveMissingGoogleProfile(data.user.id, credential);
+      } catch (profileError) {
+        console.warn("Google profile details could not be saved:", profileError?.message || profileError);
+      }
+      const sessionWithGoogleProfile = {
+        ...data.session,
+        user: {
+          ...verified.user,
+          user_metadata: {
+            ...verified.user.user_metadata,
+            full_name: verified.user.user_metadata?.full_name || (typeof credential.fullName === "string" ? credential.fullName.trim().slice(0, 160) : ""),
+            avatar_url: verified.user.user_metadata?.avatar_url || (typeof credential.photoUrl === "string" && credential.photoUrl.startsWith("https://") ? credential.photoUrl.slice(0, 2048) : ""),
+          },
+        },
+      };
+      const nextUser = await applySupabaseSession(sessionWithGoogleProfile, role, role);
+      if (!nextUser) throw new Error("Your Google account could not be opened. Please try again.");
+    } catch (reason) {
+      if (openedSession) await supabase.auth.signOut({ scope: "local" }).catch(() => {});
+      const code = reason?.code || "";
+      if (code !== "auth/popup-closed-by-user" && code !== "auth/cancelled-popup-request") {
+        const message = code === "auth/unauthorized-domain"
+          ? "Google sign-in is not enabled for this website yet. Please use email for now."
+          : code === "auth/popup-blocked"
+            ? "Allow popups for this website, then try Google again."
+            : reason?.message || "Google sign-in failed. Please try again.";
+        setFormError(message);
+      }
+      await signOutFirebaseGoogle().catch(() => {});
+    } finally { endInteractiveAuth(); setLoading(false); }
   };
 
   const switchMode = (next) => { setMode(next); if (next === "signUp") setMethod("otp"); setPassword(""); clearMessages(); };
@@ -290,13 +381,22 @@ export default function Login() {
             </Pressable>
           </View>
         ) : null}
-        <View style={styles.security}><ShieldCheck size={15} color={colors.success} /><Text style={styles.securityText}>{passwordMode ? "Passwords are encrypted and never visible to anyone" : "Verified by secure email OTP"}</Text></View>
+        <View style={styles.security}><ShieldCheck size={15} color={colors.success} /><Text style={styles.securityText}>{passwordMode ? "Passwords are encrypted and never visible to anyone" : stage === "email" ? "Secure sign-in with Google or email" : "Verified by secure email OTP"}</Text></View>
         {notice ? (
           <View style={styles.notice}><Text style={styles.noticeText}>{notice}</Text></View>
         ) : null}
         {formError ? (
           <View testID="auth-error" accessibilityRole="alert" style={styles.errorNotice}><Text style={styles.errorNoticeText}>{formError}</Text></View>
         ) : null}
+
+        {stage === "email" ? <View style={styles.googleSection}>
+          <Pressable testID="google-auth-btn" accessibilityRole="button" disabled={loading} onPress={signInWithGoogle} style={({ pressed }) => [styles.googleButton, (pressed || loading) && { opacity: 0.7 }]}>
+            <Text style={styles.googleMark}>G</Text>
+            <Text style={styles.googleButtonText}>{loading ? "Connecting..." : mode === "signUp" ? "Create account with Google" : "Continue with Google"}</Text>
+          </Pressable>
+          <Text style={styles.googleHint}>Use your Google account for {isPriest ? "your Purohit profile" : "bookings and updates"}.</Text>
+          <View style={styles.googleDivider}><View style={styles.googleLine} /><Text style={styles.googleOr}>OR CONTINUE WITH EMAIL</Text><View style={styles.googleLine} /></View>
+        </View> : null}
 
         {passwordMode ? (
           <>
@@ -466,4 +566,12 @@ const styles = bindBrandStyles({
   inputBare: { flex: 1, fontSize: font.sizes.base, color: colors.ink, paddingVertical: 0 },
   linkBtn: { minHeight: 44, flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center" },
   linkText: { color: colors.brandOrangeDark, fontWeight: "700", fontSize: font.sizes.sm },
+  googleSection: { gap: 11, marginTop: 2 },
+  googleDivider: { flexDirection: "row", alignItems: "center", gap: 12 },
+  googleLine: { flex: 1, height: 1, backgroundColor: colors.warmBorder },
+  googleOr: { color: colors.muted2, fontSize: 10, fontWeight: "800", letterSpacing: 1.4 },
+  googleButton: { minHeight: 52, borderWidth: 1, borderColor: colors.warmBorder, borderRadius: radii.md, backgroundColor: colors.white, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12 },
+  googleMark: { color: "#4285F4", fontSize: 22, fontWeight: "800" },
+  googleButtonText: { color: colors.ink, fontSize: 14, fontWeight: "700" },
+  googleHint: { color: colors.muted2, fontSize: 11, textAlign: "center" },
 });

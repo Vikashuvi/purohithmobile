@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { bindBrandStyles } from "../../lib/brandStyles";
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from "react-native";
-import { Bell, ChevronRight, CircleHelp, Languages, LogOut, MapPin, Palette, ShieldCheck, Smartphone, Star, UserRound, WalletCards, BriefcaseBusiness, CalendarDays, Phone, X, IndianRupee } from "lucide-react-native";
+import { Bell, ChevronRight, CircleHelp, Languages, LogOut, MapPin, Palette, ShieldCheck, Smartphone, UserRound, Phone, X, IndianRupee } from "lucide-react-native";
 import { colors, font } from "../../lib/theme";
 import { Avatar, PageHeader } from "../../components/ProductUI";
 import { useI18n } from "../../lib/i18n";
@@ -35,14 +35,17 @@ export default function Profile({ navigation }) {
 
   const handleSave = async () => {
     const cleanPhone = phoneInput.replace(/\D/g, "").slice(-10);
-    if (!cleanPhone || cleanPhone.length !== 10) {
+    if (phoneInput.trim() && cleanPhone.length !== 10) {
       return Alert.alert("Invalid Phone Number", "Please enter a valid 10-digit mobile number.");
+    }
+    if (nameInput.trim().length < 2) {
+      return Alert.alert("Invalid Name", "Please enter your full name.");
     }
     setSaving(true);
     try {
-      await updateProfile({ name: nameInput.trim() || user.name, phone: cleanPhone });
+      await updateProfile({ name: nameInput.trim(), ...(phoneInput.trim() ? { phone: cleanPhone } : {}) });
       setEditing(false);
-      Alert.alert("Profile Updated", "Your mobile number has been saved for bookings and Cashfree checkout.");
+      Alert.alert("Profile Updated", "Your account details have been saved.");
     } catch (err) {
       Alert.alert("Update Failed", err?.message || "Could not save your details. Please try again.");
     } finally {
@@ -66,28 +69,22 @@ export default function Profile({ navigation }) {
         <PageHeader eyebrow={priest ? "YOUR PRACTICE" : "YOUR ACCOUNT"} title="Profile" subtitle={priest ? "Manage how families discover and book your services." : "Trips, preferences, payments, and account protection."} />
         
         <View style={[styles.profilePanel, desktop && styles.profilePanelDesktop]}>
-          <Avatar name={user.name || "P"} size={desktop ? 92 : 78} verified />
+          <Avatar name={user.name || "P"} uri={user.avatarUrl} size={desktop ? 92 : 78} verified={!priest || user.verificationStatus === "verified"} />
           <View style={styles.identity}>
             <View style={styles.identityLine}>
               <Text style={styles.name}>{user.name || (priest ? "Purohit" : "Customer")}</Text>
-              <ShieldCheck size={18} color={colors.saffron} />
+              {(!priest || user.verificationStatus === "verified") ? <ShieldCheck size={18} color={colors.saffron} /> : null}
             </View>
             <Text style={[styles.phone, !user.phone && styles.phoneMissing]}>
               {user.phone ? `+91 ${user.phone}` : "No phone number added"}
             </Text>
-            <Text style={styles.member}>{priest ? "Verified priest account" : "Purohith Connect member"}</Text>
+            <Text style={styles.member}>{priest ? user.verificationStatus === "verified" ? "Verified priest account" : user.onboardingRequired ? "Priest account · complete your profile anytime" : "Priest verification in progress" : "Purohith Connect member"}</Text>
           </View>
-          {priest ? (
-            <Pressable onPress={() => navigation.navigate("PriestOnboarding")} style={styles.editButton}>
-              <Text style={styles.editText}>Edit profile</Text>
-            </Pressable>
-          ) : (
-            <Pressable onPress={openEdit} style={[styles.editButton, !user.phone && styles.addPhoneBtn]}>
-              <Text style={[styles.editText, !user.phone && styles.addPhoneBtnText]}>
-                {user.phone ? "Edit profile" : "+ Add phone"}
-              </Text>
-            </Pressable>
-          )}
+          <Pressable onPress={openEdit} style={[styles.editButton, !user.phone && styles.addPhoneBtn]}>
+            <Text style={[styles.editText, !user.phone && styles.addPhoneBtnText]}>
+              {user.phone ? "Edit account" : "Add account details"}
+            </Text>
+          </Pressable>
         </View>
 
         {!user.phone && !priest ? (
@@ -107,28 +104,12 @@ export default function Profile({ navigation }) {
           </Pressable>
         ) : null}
 
-        <View style={styles.metrics}>
-          {priest ? (
-            <>
-              <Metric icon={Star} value="4.9" label="Rating" />
-              <Metric icon={BriefcaseBusiness} value="28" label="Ceremonies" />
-              <Metric icon={WalletCards} value="₹42K" label="Earned" />
-            </>
-          ) : (
-            <>
-              <Metric icon={CalendarDays} value="3" label="Bookings" />
-              <Metric icon={Star} value="2" label="Reviews" />
-              <Metric icon={ShieldCheck} value="100%" label="Protected" />
-            </>
-          )}
-        </View>
-
         {priest ? (
           <Pressable onPress={() => navigation.navigate("PriestOnboarding")} style={({ pressed }) => [styles.practiceBanner, pressed && styles.pressed]}>
             <View style={styles.practiceIcon}><UserRound size={21} color={colors.white} /></View>
             <View style={{ flex: 1 }}>
               <Text style={styles.practiceEyebrow}>PUBLIC LISTING</Text>
-              <Text style={styles.practiceTitle}>Complete your professional profile</Text>
+              <Text style={styles.practiceTitle}>{user.onboardingRequired ? "Complete your professional profile" : "Manage your professional profile"}</Text>
               <Text style={styles.practiceBody}>Specialties, languages, service areas, photos, and verification.</Text>
             </View>
             <ChevronRight size={19} color={colors.white} />
@@ -186,7 +167,7 @@ export default function Profile({ navigation }) {
               </Pressable>
             </View>
             <Text style={styles.modalSub}>
-              Enter your 10-digit mobile number for Cashfree payment sessions and ceremony updates.
+              Your Google name is filled in when available. Add a mobile number when you need bookings or payment updates.
             </Text>
 
             <Text style={styles.inputLabel}>Full name</Text>
@@ -198,7 +179,7 @@ export default function Profile({ navigation }) {
               style={styles.modalInput}
             />
 
-            <Text style={[styles.inputLabel, { marginTop: 14 }]}>Mobile number *</Text>
+            <Text style={[styles.inputLabel, { marginTop: 14 }]}>Mobile number (optional for now)</Text>
             <TextInput
               value={phoneInput}
               onChangeText={setPhoneInput}
@@ -221,16 +202,6 @@ export default function Profile({ navigation }) {
         </View>
       </Modal>
     </>
-  );
-}
-
-function Metric({ icon: Icon, value, label }) {
-  return (
-    <View style={styles.metric}>
-      <Icon size={17} color={colors.ink} />
-      <Text style={styles.metricValue}>{value}</Text>
-      <Text style={styles.metricLabel}>{label}</Text>
-    </View>
   );
 }
 
@@ -290,10 +261,6 @@ const styles = bindBrandStyles({
     backgroundColor: colors.brandBrown,
   },
   missingPhoneActionText: { color: colors.white, fontFamily: font.bold, fontSize: 11 },
-  metrics: { flexDirection: "row", borderBottomWidth: 1, borderColor: colors.warmBorder, marginTop: 14 },
-  metric: { flex: 1, minHeight: 104, alignItems: "center", justifyContent: "center", borderRightWidth: 1, borderColor: colors.warmBorder },
-  metricValue: { color: colors.ink, fontFamily: font.bold, fontSize: 20, marginTop: 8 },
-  metricLabel: { color: colors.muted2, fontSize: 10, marginTop: 3 },
   practiceBanner: { marginTop: 28, minHeight: 116, padding: 18, borderRadius: 14, backgroundColor: colors.brandBrown, flexDirection: "row", alignItems: "center", gap: 13 },
   practiceIcon: { width: 44, height: 44, borderRadius: 10, backgroundColor: colors.brandOrange, alignItems: "center", justifyContent: "center" },
   practiceEyebrow: { color: "#F3CDD4", fontFamily: font.bold, fontSize: 9 },

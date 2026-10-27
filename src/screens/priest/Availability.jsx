@@ -86,19 +86,22 @@ export default function Availability() {
     };
 
     try {
-      await AsyncStorage.setItem(storageKey, JSON.stringify(payload));
       if (user?.id && supabase) {
-        await supabase
+        const { error } = await supabase
           .from("priest_profiles")
           .update({ availability_notes: JSON.stringify(payload) })
           .eq("user_id", user.id);
+        if (error) throw error;
+      } else if (!user?.demo) {
+        throw new Error("Sign in to save your availability.");
       }
+      await AsyncStorage.setItem(storageKey, JSON.stringify(payload));
       if (!user?.demo) {
         await api.patch("/priest/availability", { blocked_dates: payload.blocked, availability_slots: payload.slots }).catch(() => {});
       }
       Alert.alert("Availability saved", "Your calendar and ceremony times are updated.");
     } catch (error) {
-      Alert.alert("Availability saved", "Your schedule settings have been saved to your profile.");
+      Alert.alert("Availability not saved", error?.message || "Please try again.");
     } finally {
       setSaving(false);
     }

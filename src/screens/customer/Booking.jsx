@@ -42,7 +42,11 @@ export default function Booking({ route, navigation }) {
   const { priestId, poojaSlug: routePoojaSlug } = route.params || {};
   const [pooja, setPooja] = useState(() => findDefaultPooja(routePoojaSlug));
   const [poojaCatalog, setPoojaCatalog] = useState(DEFAULT_POOJAS);
+  const [serviceFeePercent, setServiceFeePercent] = useState(10);
   const [selectedPoojaSlug, setSelectedPoojaSlug] = useState(routePoojaSlug || "satyanarayan");
+  const [withSamagri, setWithSamagri] = useState(false);
+  const [additionalPriest, setAdditionalPriest] = useState(false);
+  const [extraService, setExtraService] = useState(false);
   const [priest, setPriest] = useState(null);
   const [priestError, setPriestError] = useState("");
   const [priestLoadAttempt, setPriestLoadAttempt] = useState(0);
@@ -120,7 +124,8 @@ export default function Booking({ route, navigation }) {
 
   useEffect(() => {
     fetchMarketplacePoojas()
-      .then(({ poojas }) => {
+      .then(({ poojas, service_fee_percent }) => {
+        setServiceFeePercent([5, 10].includes(Number(service_fee_percent)) ? Number(service_fee_percent) : 10);
         const next = poojas?.length ? poojas : DEFAULT_POOJAS;
         setPoojaCatalog(next);
         const found = next.find((item) => item.slug === selectedPoojaSlug) || next[0] || DEFAULT_POOJAS[2];
@@ -166,6 +171,14 @@ export default function Booking({ route, navigation }) {
   const publishedService = useMemo(() => {
     return priest?.services?.find((service) => service.pooja_slug === selectedPoojaSlug);
   }, [priest?.services, selectedPoojaSlug]);
+  const availableTimeSlots = useMemo(() => {
+    const selected = priest?.availability_slots?.[date];
+    return Array.isArray(selected) ? TIME_SLOTS.filter((slot) => selected.includes(slot)) : TIME_SLOTS;
+  }, [priest?.availability_slots, date]);
+  useEffect(() => {
+    if (time && !availableTimeSlots.includes(time)) setTime("");
+  }, [availableTimeSlots, time]);
+  useEffect(() => { setWithSamagri(false); setAdditionalPriest(false); setExtraService(false); }, [selectedPoojaSlug]);
 
   const isOfferedCeremony = useMemo(() => {
     if (!availablePoojas?.length) return true;
@@ -173,17 +186,20 @@ export default function Booking({ route, navigation }) {
   }, [availablePoojas, selectedPoojaSlug]);
 
   const totals = useMemo(() => {
-    if (!pooja) return { pooja_price: 0, addons: 0, subtotal: 0, gst: 0 };
-    const price = publishedService?.price_inr
+    if (!pooja) return { pooja_price: 0, service_fee: 0, addons: 0, subtotal: 0, gst: 0 };
+    const price = (withSamagri ? publishedService?.with_samagri_price_inr : null)
+      ?? publishedService?.price_inr
       ?? (priest?.starting_price_inr ? Number(priest.starting_price_inr) : null)
       ?? pooja.base_price
       ?? 0;
     const pooja_price = Number(price || 0);
-    const subtotal = pooja_price;
+    const addons = (additionalPriest ? Number(publishedService?.additional_priest_price_inr || 0) : 0) + (extraService ? Number(publishedService?.extra_service_price_inr || 0) : 0);
+    const service_fee = Math.round((pooja_price + addons) * serviceFeePercent / 100);
+    const subtotal = pooja_price + addons + service_fee;
     const base = +(subtotal / 1.18).toFixed(2);
     const gst = +(subtotal - base).toFixed(2);
-    return { pooja_price, addons: 0, subtotal, gst };
-  }, [pooja, publishedService, priest]);
+    return { pooja_price, service_fee, addons, subtotal, gst };
+  }, [pooja, publishedService, priest, serviceFeePercent, withSamagri, additionalPriest, extraService]);
 
   useEffect(() => {
     if (user?.phone && !phone) {
@@ -254,6 +270,9 @@ export default function Booking({ route, navigation }) {
         latitude: coords.latitude,
         longitude: coords.longitude,
         customer_phone: cleanPhone,
+        with_samagri: withSamagri,
+        additional_priest: additionalPriest,
+        extra_service: extraService,
       });
       setConfirmed({
         ...(data.booking || {}),
@@ -272,15 +291,8 @@ export default function Booking({ route, navigation }) {
       const errMsg = e?.message || e?.response?.data?.detail || "Booking failed";
       if (errMsg.includes("not published a price")) {
         Alert.alert(
-          "Pricing In Progress",
-          `${priest?.name || "This purohit"} is still confirming published rates for ${pooja?.name || "this ceremony"}. Would you like to request custom proposals from nearby verified purohits?`,
-          [
-            { text: "Change ceremony", style: "cancel" },
-            {
-              text: "Request proposals",
-              onPress: () => navigation.navigate("RequestPooja", { poojaSlug: selectedPoojaSlug, poojaName: pooja?.name }),
-            },
-          ]
+          "Price not available",
+          `${priest?.name || "This purohit"} has not published a rate for ${pooja?.name || "this ceremony"}. Choose an offered ceremony or browse another profile.`
         );
       } else {
         Alert.alert("Failed", errMsg);
@@ -372,7 +384,7 @@ export default function Booking({ route, navigation }) {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.white }}>
-      <ScrollView ref={scrollRef} contentContainerStyle={[styles.content, desktop && styles.contentDesktop]} keyboardShouldPersistTaps="handled">
+      <ScrollView ref={scrollRef} contentContainerStyle={[styles.content, desktop && styles.contentDesktop]} keyboardShouldPersistTaps="handled" removeClippedSubviews={false}>
         <Text style={styles.eyebrow}>REVIEW AND CONTINUE</Text>
         <Text style={styles.h1}>{pooja.name}</Text>
         <View style={styles.providerSummary}>
@@ -413,23 +425,24 @@ export default function Booking({ route, navigation }) {
           </ScrollView>
         </Field>
 
+        {publishedService ? <View style={{ marginTop: 18, gap: 8 }}>
+          <Text style={styles.noticeTitle}>Choose service options</Text>
+          <Text style={styles.noticeBody}>Without samagri: ₹{Number(publishedService.price_inr).toLocaleString("en-IN")}. Add the options you need below.</Text>
+          <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: withSamagri }} disabled={publishedService.with_samagri_price_inr == null} onPress={() => setWithSamagri(!withSamagri)} style={styles.ceremonyChip}><Text style={styles.ceremonyName}>{withSamagri ? "✓ " : ""}With samagri {publishedService.with_samagri_price_inr == null ? "(not offered)" : `₹${Number(publishedService.with_samagri_price_inr).toLocaleString("en-IN")}`}</Text></Pressable>
+          <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: additionalPriest }} disabled={publishedService.additional_priest_price_inr == null} onPress={() => setAdditionalPriest(!additionalPriest)} style={styles.ceremonyChip}><Text style={styles.ceremonyName}>{additionalPriest ? "✓ " : ""}Additional purohit {publishedService.additional_priest_price_inr == null ? "(not offered)" : `+₹${Number(publishedService.additional_priest_price_inr).toLocaleString("en-IN")}`}</Text></Pressable>
+          {publishedService.extra_service_price_inr != null && <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: extraService }} onPress={() => setExtraService(!extraService)} style={styles.ceremonyChip}><Text style={styles.ceremonyName}>{extraService ? "✓ " : ""}{publishedService.extra_service_label || "Additional service"} +₹{Number(publishedService.extra_service_price_inr).toLocaleString("en-IN")}</Text></Pressable>}
+        </View> : null}
+
         {!isOfferedCeremony ? (
           <View style={styles.ceremonyNotice}>
             <View style={styles.noticeIconWrap}>
               <Info size={15} color={colors.brandBrown} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.noticeTitle}>Custom ceremony request</Text>
+              <Text style={styles.noticeTitle}>Choose a published ceremony</Text>
               <Text style={styles.noticeBody}>
-                {priest.name} does not list this ceremony in their standard offerings. You can select an offered specialty above or request custom proposals.
+                {priest.name} does not list this ceremony in their standard offerings. Select an offered specialty above or browse another profile.
               </Text>
-              <Pressable
-                onPress={() => navigation.navigate("RequestPooja", { poojaSlug: selectedPoojaSlug, poojaName: pooja.name })}
-                style={styles.noticeBtn}
-              >
-                <Send size={12} color={colors.brandBrown} />
-                <Text style={styles.noticeBtnText}>Request custom proposals</Text>
-              </Pressable>
             </View>
           </View>
         ) : null}
@@ -439,7 +452,7 @@ export default function Booking({ route, navigation }) {
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {upcomingDates().map((d) => {
               const iso = fmtDate(d);
-              const blocked = (priest.blocked_dates || []).includes(iso);
+              const blocked = (priest.blocked_dates || []).includes(iso) || (Array.isArray(priest.availability_slots?.[iso]) && priest.availability_slots[iso].length === 0);
               const isSel = date === iso;
               return (
                 <Pressable
@@ -462,7 +475,7 @@ export default function Booking({ route, navigation }) {
         {/* Time slots */}
         <Field ref={rememberField("time")} label="Time slot" required error={errors.time} errorTestID="booking-error-time">
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {TIME_SLOTS.map(s => (
+            {availableTimeSlots.map(s => (
               <Pressable
                 key={s}
                 testID={`time-${s}`}
@@ -472,6 +485,7 @@ export default function Booking({ route, navigation }) {
                 <Text style={[styles.timeChipTxt, time === s && { color: colors.white }]}>{s}</Text>
               </Pressable>
             ))}
+            {availableTimeSlots.length === 0 && <Text style={styles.noticeBody}>No time slots are available on this date. Choose another date.</Text>}
           </View>
         </Field>
 
@@ -535,6 +549,8 @@ export default function Booking({ route, navigation }) {
         {/* Cart breakdown */}
         <Card testID="cart-breakdown" style={{ marginTop: spacing.md, ...shadow.card }}>
           <Row label={pooja.name} value={`₹${totals.pooja_price.toLocaleString("en-IN")}`} />
+          {totals.addons > 0 && <Row label="Additional services" value={`₹${totals.addons.toLocaleString("en-IN")}`} />}
+          <Row label={`Platform fee (${serviceFeePercent}%)`} value={`₹${totals.service_fee.toLocaleString("en-IN")}`} />
           <View style={{ height: 1, backgroundColor: colors.warmBorder, marginVertical: 8 }} />
           <Text style={{ color: colors.muted2, fontSize: font.sizes.xs }}>{t.includingGst} (₹{totals.gst.toLocaleString("en-IN")})</Text>
           <Row label={t.total} value={`₹${totals.subtotal.toLocaleString("en-IN")}`} tone="saffron" />

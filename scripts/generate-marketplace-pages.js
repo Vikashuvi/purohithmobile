@@ -7,11 +7,13 @@ const areas = require(path.join(root, "src/data/bangalore-areas.json"));
 const site = "https://purohithconnect.com";
 
 function loadEnvFile() {
-  const filename = path.join(root, ".env");
-  if (!fs.existsSync(filename)) return;
-  for (const line of fs.readFileSync(filename, "utf8").split(/\r?\n/)) {
-    const match = line.match(/^([A-Z0-9_]+)=(.*)$/);
-    if (match && !process.env[match[1]]) process.env[match[1]] = match[2].replace(/^['"]|['"]$/g, "");
+  for (const name of [".env.local", ".env"]) {
+    const filename = path.join(root, name);
+    if (!fs.existsSync(filename)) continue;
+    for (const line of fs.readFileSync(filename, "utf8").split(/\r?\n/)) {
+      const match = line.match(/^([A-Z0-9_]+)=(.*)$/);
+      if (match && !process.env[match[1]]) process.env[match[1]] = match[2].replace(/^['"]|['"]$/g, "");
+    }
   }
 }
 

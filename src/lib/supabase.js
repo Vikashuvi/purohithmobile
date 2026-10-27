@@ -25,7 +25,7 @@ export const supabaseConfig = {
 };
 
 export function authRedirectUrl(path = "auth/callback") {
-  if (Platform.OS === "web" && typeof window !== "undefined") {
+  if (Platform.OS === "web" && typeof window !== "undefined" && window.location?.origin) {
     return `${window.location.origin}/${path.replace(/^\//, "")}`;
   }
   return Linking.createURL(path.replace(/^\//, ""));

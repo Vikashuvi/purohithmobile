@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { bindBrandStyles } from "../lib/brandStyles";
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } from "react-native";
+import { ActivityIndicator, FlatList, Platform, Pressable, RefreshControl, Text, View } from "react-native";
 import { Bell, BellOff, CalendarCheck2, CheckCheck, CircleX, IndianRupee, MessageSquareQuote, Sparkles } from "lucide-react-native";
 import { colors, radii, spacing } from "../lib/theme";
 import { useAuth } from "../lib/auth";
+import { usePreferences } from "../lib/preferences";
 import { listNotifications, markAllNotificationsRead, markNotificationRead, notificationRoute, subscribeNotifications } from "../lib/inbox";
+import { ensureWebPush, registerWebPush, webPushPermission, webPushSupported } from "../lib/webPush";
 
 const ICONS = {
   booking_request: CalendarCheck2,
@@ -30,10 +32,12 @@ function timeAgo(value) {
 
 export default function Notifications({ navigation }) {
   const { user } = useAuth();
+  const { notificationsEnabled, setNotificationsEnabled } = usePreferences();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [webStatus, setWebStatus] = useState(Platform.OS === "web" ? webPushPermission() : "unsupported");
 
   const load = useCallback(async () => {
     try {
@@ -48,6 +52,13 @@ export default function Notifications({ navigation }) {
     load();
     return subscribeNotifications(user?.id, load);
   }, [load, user?.id]);
+
+  useEffect(() => {
+    if (Platform.OS !== "web" || !user?.id || !notificationsEnabled) return undefined;
+    let cancelled = false;
+    ensureWebPush(user.id).then((result) => { if (!cancelled) setWebStatus(result.status); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [notificationsEnabled, user?.id]);
 
   const open = async (item) => {
     if (!item.read_at) {
@@ -73,9 +84,12 @@ export default function Notifications({ navigation }) {
     data={items}
     keyExtractor={(item) => item.id}
     refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} tintColor={colors.saffron} />}
-    ListHeaderComponent={<View style={styles.header}>
-      <View style={{ flex: 1 }}><Text style={styles.kicker}>UPDATES</Text><Text style={styles.h1}>Notifications</Text><Text style={styles.sub}>{unread ? `${unread} unread` : "You're all caught up"}</Text></View>
-      {unread ? <Pressable testID="mark-all-read" onPress={readAll} style={styles.readAll}><CheckCheck size={15} color={colors.brandBrown} /><Text style={styles.readAllText}>Mark all read</Text></Pressable> : null}
+    ListHeaderComponent={<View>
+      <View style={styles.header}>
+        <View style={{ flex: 1 }}><Text style={styles.kicker}>UPDATES</Text><Text style={styles.h1}>Notifications</Text><Text style={styles.sub}>{unread ? `${unread} unread` : "You're all caught up"}</Text></View>
+        {unread ? <Pressable testID="mark-all-read" onPress={readAll} style={styles.readAll}><CheckCheck size={15} color={colors.brandBrown} /><Text style={styles.readAllText}>Mark all read</Text></Pressable> : null}
+      </View>
+      {Platform.OS === "web" ? <View style={styles.browserCard}><Text style={styles.browserTitle}>Browser notifications</Text><Text style={styles.browserBody}>{webStatus === "registered" ? "This browser can receive updates even when this page is closed." : webStatus === "denied" ? "Notifications are blocked in your browser settings. The in-app inbox still works." : webStatus === "unconfigured" ? "Browser push is not configured yet. Your in-app inbox remains active." : !webPushSupported() ? "This browser does not support push notifications. Your in-app inbox remains active." : "Get booking, proposal, payment, and marketing updates on this browser."}</Text>{webPushSupported() && webStatus !== "registered" && webStatus !== "denied" && webStatus !== "unconfigured" ? <Pressable accessibilityRole="button" onPress={async () => { try { const result = await registerWebPush(user?.id); setWebStatus(result.status); if (result.status === "registered") await setNotificationsEnabled(true); } catch (reason) { setWebStatus("error"); setError(reason?.message || "Could not enable browser notifications"); } }} style={styles.enableButton}><Text style={styles.enableText}>Enable browser notifications</Text></Pressable> : null}</View> : null}
     </View>}
     ListEmptyComponent={<View style={styles.empty}>{error ? <BellOff size={26} color={colors.muted2} /> : <Bell size={26} color={colors.saffron} />}<Text style={styles.emptyTitle}>{error ? "Couldn't load notifications" : "No notifications yet"}</Text><Text style={styles.emptyBody}>{error || (user?.role === "priest" ? "New booking requests and open pooja requests will show up here." : "We'll let you know when a Purohit accepts, declines, or sends a quote.")}</Text></View>}
     ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
@@ -118,4 +132,9 @@ const styles = bindBrandStyles({
   empty: { alignItems: "center", padding: 32, borderRadius: radii.xl, backgroundColor: colors.muted },
   emptyTitle: { color: colors.ink, fontSize: 16, fontWeight: "700", marginTop: 10 },
   emptyBody: { color: colors.muted2, fontSize: 12, lineHeight: 18, textAlign: "center", marginTop: 5, maxWidth: 300 },
+  browserCard: { marginTop: 20, padding: 18, borderRadius: radii.lg, borderWidth: 1, borderColor: colors.warmBorder, backgroundColor: colors.white },
+  browserTitle: { color: colors.ink, fontSize: 15, fontWeight: "800" },
+  browserBody: { color: colors.muted2, fontSize: 12, lineHeight: 18, marginTop: 5 },
+  enableButton: { alignSelf: "flex-start", marginTop: 12, paddingHorizontal: 14, paddingVertical: 10, borderRadius: radii.pill, backgroundColor: colors.brandBrown },
+  enableText: { color: colors.white, fontSize: 12, fontWeight: "700" },
 });

@@ -73,11 +73,21 @@ npx eas submit -p android
 
 ## Push notifications (Expo Push Service)
 
-- The app calls `POST /api/users/push-token` after login with the device's Expo
-  push token. The backend stores it on the user doc (`push_tokens` array).
-- To send from your backend, use `https://exp.host/--/api/v2/push/send` with
-  the stored token(s). No Firebase / APNs setup required — Expo Push handles
-  both stores automatically.
+- After login, the app registers its Expo push token in the Supabase
+  `push_tokens` table. Tokens are scoped to the current user and platform.
+- The Super Admin notification console invokes the `admin-notifications`
+  Supabase Edge Function. It writes each message to `app_notifications` for
+  the realtime inbox and submits device pushes to Expo in batches.
+- Android delivery is backed by Firebase Cloud Messaging. The Firebase Android
+  registration is committed as `google-services.json`; its private FCM service
+  credential belongs in EAS credentials and must never be committed.
+- iOS delivery is backed by APNs. Add an Apple push key to the EAS project before
+  producing the App Store build.
+- Android uses the high-priority `marketing` channel. A tap routes the user to
+  the notification inbox, home, bookings, priest search, or profile screen.
+
+See [`../../docs/firebase-notifications.md`](../../docs/firebase-notifications.md)
+for the production credential and release checklist.
 
 ## Deep links
 

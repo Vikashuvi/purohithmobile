@@ -6,6 +6,7 @@ import { colors } from "../../lib/theme";
 import { useAuth } from "../../lib/auth";
 import MapplsDrawer from "../../components/MapplsDrawer";
 import { listProviderRequests, sendProviderProposal } from "../../lib/payments";
+import { fetchMarketplaceSettings } from "../../lib/marketplace";
 
 const futureDate = (days) => {
   const d = new Date();
@@ -21,6 +22,7 @@ const getDemoRequests = () => [
 export default function Marketplace() {
   const { user } = useAuth();
   const [items, setItems] = useState([]);
+  const [biddingEnabled, setBiddingEnabled] = useState(false);
   const [quotes, setQuotes] = useState({});
   const [messages, setMessages] = useState({});
   const [samagri, setSamagri] = useState({});
@@ -29,6 +31,9 @@ export default function Marketplace() {
   const [mapTarget, setMapTarget] = useState(null);
 
   const load = useCallback(async () => {
+    const settings = await fetchMarketplaceSettings().catch(() => ({}));
+    setBiddingEnabled(settings.bidding_enabled === true);
+    if (settings.bidding_enabled !== true) return setItems([]);
     if (user?.demo) return setItems(getDemoRequests());
     try {
       const data = await listProviderRequests(user?.id);
@@ -37,8 +42,8 @@ export default function Marketplace() {
         if (req.ceremony_date && req.ceremony_date < todayStr) return false;
         return true;
       });
-      setItems(activeRequests.length ? activeRequests : getDemoRequests());
-    } catch (_) { setItems(getDemoRequests()); }
+      setItems(activeRequests);
+    } catch (_) { setItems([]); }
   }, [user?.demo, user?.id]);
 
   useEffect(() => { load(); }, [load]);
@@ -63,6 +68,7 @@ export default function Marketplace() {
     } finally { setSending(""); }
   };
 
+  if (!biddingEnabled) return <View style={[styles.root, { flex: 1, justifyContent: "center", padding: 24 }]}><Text style={styles.title}>Fixed-price bookings are on</Text><Text style={styles.sub}>Customers find you through your profile, service areas, availability and published pooja rates. Keep your rate card current to receive direct bookings.</Text></View>;
   return <>
   <ScrollView style={styles.root} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} tintColor={colors.saffron} />}>
     <View style={styles.hero}>

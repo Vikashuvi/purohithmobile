@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, Switch, Text, TextInput, View, useWindowDimensions } from "react-native";
-import { Check, Clock3, IndianRupee, Package } from "lucide-react-native";
+import { Clock3, IndianRupee } from "lucide-react-native";
 import { bindBrandStyles } from "../../lib/brandStyles";
 import { colors, font, radii, spacing } from "../../lib/theme";
 import { Button } from "../../components/UI";
@@ -39,8 +39,11 @@ export default function RateCard({ navigation }) {
         return [pooja.slug, {
           offered: Boolean(service?.is_active) || (!service && offeredSlugs.has(pooja.slug)),
           price: service ? String(Math.round(Number(service.price_paise) / 100)) : "",
+          withSamagri: service?.with_samagri_price_paise == null ? "" : String(Math.round(Number(service.with_samagri_price_paise) / 100)),
+          additionalPriest: service?.additional_priest_price_paise == null ? "" : String(Math.round(Number(service.additional_priest_price_paise) / 100)),
+          extraName: service?.extra_service_label || "",
+          extraPrice: service?.extra_service_price_paise == null ? "" : String(Math.round(Number(service.extra_service_price_paise) / 100)),
           duration: String(service?.duration_minutes || pooja.duration_minutes || ""),
-          samagri: Boolean(service?.includes_samagri),
           note: service?.description || "",
         }];
       })));
@@ -83,6 +86,12 @@ export default function RateCard({ navigation }) {
         next[pooja.slug] = `Enter a price between ₹${MIN_PRICE} and ₹${MAX_PRICE.toLocaleString("en-IN")}.`;
       } else if (duration !== null && (duration < 15 || duration > 1440)) {
         next[pooja.slug] = "Duration must be between 15 and 1440 minutes.";
+      } else if (row.withSamagri && (Number(row.withSamagri) < price || Number(row.withSamagri) > MAX_PRICE)) {
+        next[pooja.slug] = "The samagri price must be at least the base price and at most ₹5,00,000.";
+      } else if ([row.additionalPriest, row.extraPrice].some((value) => value && Number(value) > MAX_PRICE)) {
+        next[pooja.slug] = "An additional charge exceeds ₹5,00,000.";
+      } else if (row.extraPrice && !row.extraName?.trim()) {
+        next[pooja.slug] = "Name the additional service before setting its price.";
       }
     });
     setErrors(next);
@@ -100,8 +109,12 @@ export default function RateCard({ navigation }) {
         return {
           pooja_slug: pooja.slug,
           price_inr: Number(row.price),
+          with_samagri_price_inr: row.withSamagri ? Number(row.withSamagri) : null,
+          additional_priest_price_inr: row.additionalPriest ? Number(row.additionalPriest) : null,
+          extra_service_label: row.extraName.trim(),
+          extra_service_price_inr: row.extraPrice ? Number(row.extraPrice) : null,
           duration_minutes: row.duration ? Number(row.duration) : null,
-          includes_samagri: row.samagri,
+          includes_samagri: false,
           description: row.note.trim(),
         };
       }));
@@ -124,7 +137,7 @@ export default function RateCard({ navigation }) {
       <ScrollView contentContainerStyle={[styles.content, desktop && styles.contentDesktop]} keyboardShouldPersistTaps="handled">
         <Text style={styles.kicker}>POOJA RATE CARD</Text>
         <Text style={styles.title}>Set your fee for each ceremony</Text>
-        <Text style={styles.sub}>Families see these prices on your profile and pay this amount (inclusive of GST) when they book you directly.</Text>
+        <Text style={styles.sub}>Set a base price without samagri, then optional prices for samagri, an additional purohit, or another service. The platform fee is shown separately to customers.</Text>
 
         {catalog.map((pooja) => {
           const row = rows[pooja.slug] || {};
@@ -149,7 +162,7 @@ export default function RateCard({ navigation }) {
                   <View style={styles.inputRow}>
                     <View style={[styles.inputShell, styles.priceShell, error && styles.inputError]}>
                       <IndianRupee size={16} color={colors.brandBrown} />
-                      <TextInput testID={`rate-price-${pooja.slug}`} value={row.price} onChangeText={(value) => update(pooja.slug, { price: digits(value, 6) })} keyboardType="number-pad" placeholder="Price" placeholderTextColor="#8A8582" style={styles.input} />
+                      <TextInput testID={`rate-price-${pooja.slug}`} value={row.price} onChangeText={(value) => update(pooja.slug, { price: digits(value, 6) })} keyboardType="number-pad" placeholder="Without samagri ₹" placeholderTextColor="#8A8582" style={styles.input} />
                     </View>
                     <View style={[styles.inputShell, styles.durationShell]}>
                       <Clock3 size={16} color={colors.brandBrown} />
@@ -157,10 +170,8 @@ export default function RateCard({ navigation }) {
                       <Text style={styles.unit}>min</Text>
                     </View>
                   </View>
-                  <Pressable onPress={() => update(pooja.slug, { samagri: !row.samagri })} style={({ pressed }) => [styles.samagri, row.samagri && styles.samagriActive, pressed && { opacity: 0.8 }]}>
-                    {row.samagri ? <Check size={14} color={colors.white} /> : <Package size={14} color={colors.ink} />}
-                    <Text style={[styles.samagriText, row.samagri && styles.samagriTextActive]}>{row.samagri ? "Samagri included" : "Samagri not included"}</Text>
-                  </Pressable>
+                  <View style={styles.inputRow}><TextInput value={row.withSamagri} onChangeText={(value) => update(pooja.slug, { withSamagri: digits(value, 6) })} keyboardType="number-pad" placeholder="With samagri ₹ (optional)" style={[styles.inputShell, styles.priceShell]}/><TextInput value={row.additionalPriest} onChangeText={(value) => update(pooja.slug, { additionalPriest: digits(value, 6) })} keyboardType="number-pad" placeholder="Additional purohit ₹" style={[styles.inputShell, styles.priceShell]}/></View>
+                  <View style={styles.inputRow}><TextInput value={row.extraName} onChangeText={(value) => update(pooja.slug, { extraName: value.slice(0, 80) })} placeholder="Other service name" style={[styles.inputShell, styles.priceShell]}/><TextInput value={row.extraPrice} onChangeText={(value) => update(pooja.slug, { extraPrice: digits(value, 6) })} keyboardType="number-pad" placeholder="Charge ₹" style={[styles.inputShell, styles.priceShell]}/></View>
                   <TextInput value={row.note} onChangeText={(value) => update(pooja.slug, { note: value.slice(0, 280) })} placeholder="Note for families (optional), e.g. includes homa" placeholderTextColor="#8A8582" style={[styles.inputShell, styles.note]} />
                   {error ? <Text style={styles.errorText}>{error}</Text> : null}
                 </>

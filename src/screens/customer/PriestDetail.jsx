@@ -14,13 +14,14 @@ export default function PriestDetail({ route, navigation }) {
   const [priest, setPriest] = useState(null);
   const [reviews, setReviews] = useState([]);
   const [poojaNames, setPoojaNames] = useState({});
+  const [biddingEnabled, setBiddingEnabled] = useState(false);
   const { width } = useWindowDimensions();
   const desktop = width >= 860;
   const narrow = width < 430;
 
   useEffect(() => {
     fetchMarketplacePoojas()
-      .then(({ poojas }) => setPoojaNames(Object.fromEntries((poojas || []).map((item) => [item.slug, item.name]))))
+      .then(({ poojas, bidding_enabled }) => { setPoojaNames(Object.fromEntries((poojas || []).map((item) => [item.slug, item.name]))); setBiddingEnabled(bidding_enabled === true); })
       .catch(() => {});
   }, []);
 
@@ -63,7 +64,7 @@ export default function PriestDetail({ route, navigation }) {
         {poojaSlug && !isRequestedPoojaOffered ? (
           <View style={styles.notOfferedBanner}>
             <Text style={styles.notOfferedText}>
-              {priest.name} does not perform {labelFromSlug(poojaSlug)}. You can book their available ceremonies below, or request proposals from other purohits.
+              {priest.name} does not perform {labelFromSlug(poojaSlug)}. You can book their available ceremonies below or browse other purohits.
             </Text>
           </View>
         ) : null}
@@ -122,7 +123,7 @@ export default function PriestDetail({ route, navigation }) {
               <ChevronRight size={16} color={colors.muted2} />
             </Pressable>
           )) : (
-            <Text style={styles.body}>This purohit has not published ceremony prices yet. Request proposals to get a quote.</Text>
+            <Text style={styles.body}>This purohit has not published ceremony prices yet. Browse another profile with a published rate.</Text>
           )}
         </View>
 
@@ -144,7 +145,7 @@ export default function PriestDetail({ route, navigation }) {
           compact={narrow}
           style={styles.stickyPrimary}
         />
-        <Button
+        {biddingEnabled && <Button
           testID="request-profile-proposal-btn"
           title="Request proposals"
           variant="outline"
@@ -152,7 +153,7 @@ export default function PriestDetail({ route, navigation }) {
           compact={narrow}
           onPress={() => navigation.navigate("RequestPooja", { poojaSlug: defaultPoojaSlug, poojaName: labelFromSlug(defaultPoojaSlug) })}
           style={styles.stickySecondary}
-        />
+        />}
       </View>
     </View>
   );

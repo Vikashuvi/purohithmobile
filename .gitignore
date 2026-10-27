@@ -14,3 +14,5 @@ supabase/.temp/
 *.apk
 .eas/
 .vercel
+google-services.json
+GoogleService-Info.plist

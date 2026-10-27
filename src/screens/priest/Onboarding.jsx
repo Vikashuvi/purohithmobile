@@ -6,6 +6,7 @@ import * as FileSystem from "expo-file-system";
 import { decode } from "base64-arraybuffer";
 import { BadgeIndianRupee, BriefcaseBusiness, Camera, Check, ChevronDown, FileBadge2, Phone, Search, UserRound, X } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useNavigation } from "@react-navigation/native";
 import { colors, font, radii } from "../../lib/theme";
 import { Button } from "../../components/UI";
 import { useAuth } from "../../lib/auth";
@@ -29,6 +30,7 @@ const POOJAS = [
 const digits = (value, length = 7) => value.replace(/[^0-9]/g, "").slice(0, length);
 
 export default function PriestOnboarding() {
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { user, completeOnboarding } = useAuth();
   const desktop = useWindowDimensions().width >= 760;
@@ -59,9 +61,9 @@ export default function PriestOnboarding() {
   }, [areaQuery]);
 
   const completion = useMemo(() => {
-    const checks = [name, phone.length >= 10, bio, experience, hourlyRate, langs.size, areas.size, poojas.size, photoUrl, idDocPath];
+    const checks = [name, phone.length >= 10, bio, experience, hourlyRate, langs.size, areas.size, poojas.size, photoUrl];
     return Math.round((checks.filter(Boolean).length / checks.length) * 100);
-  }, [areas.size, bio, experience, hourlyRate, idDocPath, langs.size, name, phone.length, photoUrl, poojas.size]);
+  }, [areas.size, bio, experience, hourlyRate, langs.size, name, phone.length, photoUrl, poojas.size]);
 
   useEffect(() => {
     let active = true;
@@ -85,7 +87,7 @@ export default function PriestOnboarding() {
       setLangs(new Set(data?.languages?.length ? data.languages : ["English"]));
       setAreas(new Set(data?.service_areas || []));
       setPoojas(new Set(data?.pooja_slugs || []));
-      setPhotoUrl(data?.photo_url || "");
+      setPhotoUrl(data?.photo_url || user.avatarUrl || "");
       setIdDocPath(data?.id_document_url || "");
       setLoading(false);
     }
@@ -176,7 +178,7 @@ export default function PriestOnboarding() {
       const now = new Date().toISOString();
       const { error: userError } = await supabase.from("app_users").update({ full_name: name.trim(), phone, updated_at: now }).eq("id", user.id);
       if (userError) throw userError;
-      const { error: profileError } = await supabase.from("priest_profiles").upsert({
+      const { data: savedProfile, error: profileError } = await supabase.from("priest_profiles").upsert({
         user_id: user.id,
         display_name: name.trim(),
         bio: bio.trim(),
@@ -193,19 +195,18 @@ export default function PriestOnboarding() {
         onboarding_step: 3,
         submitted_at: now,
         updated_at: now,
-      }, { onConflict: "user_id" });
+      }, { onConflict: "user_id" }).select("id,verification_status").single();
       if (profileError) throw profileError;
 
-      const { data: profileRecord } = await supabase.from("priest_profiles").select("id").eq("user_id", user.id).maybeSingle();
-      if (profileRecord?.id && poojas.size > 0) {
+      if (savedProfile?.id && poojas.size > 0) {
         const selected = Array.from(poojas);
         const { data: existing, error: existingError } = await supabase.from("priest_services")
           .select("pooja_slug,is_active")
-          .eq("priest_id", profileRecord.id);
+          .eq("priest_id", savedProfile.id);
         if (existingError) throw existingError;
         const existingSlugs = new Set((existing || []).map((row) => row.pooja_slug));
         const newRows = selected.filter((slug) => !existingSlugs.has(slug)).map((slug) => ({
-          priest_id: profileRecord.id,
+          priest_id: savedProfile.id,
           pooja_slug: slug,
           price_paise: Math.max(startingValue || 100, 100) * 100,
           is_active: true,
@@ -218,17 +219,17 @@ export default function PriestOnboarding() {
           if (error) throw error;
         }
         if (reactivate.length) {
-          const { error } = await supabase.from("priest_services").update({ is_active: true, updated_at: now }).eq("priest_id", profileRecord.id).in("pooja_slug", reactivate);
+          const { error } = await supabase.from("priest_services").update({ is_active: true, updated_at: now }).eq("priest_id", savedProfile.id).in("pooja_slug", reactivate);
           if (error) throw error;
         }
         if (deactivate.length) {
-          const { error } = await supabase.from("priest_services").update({ is_active: false, updated_at: now }).eq("priest_id", profileRecord.id).in("pooja_slug", deactivate);
+          const { error } = await supabase.from("priest_services").update({ is_active: false, updated_at: now }).eq("priest_id", savedProfile.id).in("pooja_slug", deactivate);
           if (error) throw error;
         }
       }
 
-      await completeOnboarding();
-      Alert.alert("Profile submitted", "Your profile is saved and has been sent for verification.");
+      await completeOnboarding(savedProfile.verification_status);
+      navigation.reset({ index: 0, routes: [{ name: "Tabs", params: { screen: "Dashboard" } }] });
     } catch (error) {
       console.error(`Priest onboarding save failed: ${error?.message || String(error)}`);
       Alert.alert("Could not save profile", error?.message || "Please try again.");
@@ -254,11 +255,11 @@ export default function PriestOnboarding() {
       <ServiceAreaPicker query={areaQuery} setQuery={setAreaQuery} open={areaOpen} setOpen={setAreaOpen} values={filteredAreas} selected={areas} error={errors.areas} onToggle={(value) => toggle(value, setAreas, "areas")} />
     </Section>
 
-    <Section icon={FileBadge2} title="Verification" subtitle="Your document is private and visible only to the verification team">
-      <View style={styles.documentRow}><View style={[styles.documentIcon, idDocPath && styles.documentIconDone]}>{idDocPath ? <Check size={22} color={colors.white} /> : <FileBadge2 size={22} color={colors.brandBrown} />}</View><View style={styles.documentCopy}><Text style={styles.itemTitle}>{idDocPath ? "Identity document uploaded" : "Upload Aadhaar or PAN"}</Text><Text style={styles.hint}>JPG or PNG up to 5 MB.</Text></View><Button title={uploading === "id" ? "Uploading..." : idDocPath ? "Replace" : "Upload"} onPress={() => uploadAsset("id")} disabled={Boolean(uploading)} variant="outline" /></View>
+    <Section icon={FileBadge2} title="Verification" subtitle="Aadhaar or PAN is optional. You can add it later from your profile.">
+      <View style={styles.documentRow}><View style={[styles.documentIcon, idDocPath && styles.documentIconDone]}>{idDocPath ? <Check size={22} color={colors.white} /> : <FileBadge2 size={22} color={colors.brandBrown} />}</View><View style={styles.documentCopy}><Text style={styles.itemTitle}>{idDocPath ? "Identity document uploaded" : "Add Aadhaar or PAN (optional)"}</Text><Text style={styles.hint}>Private to the verification team. JPG or PNG up to 5 MB.</Text></View><Button title={uploading === "id" ? "Uploading..." : idDocPath ? "Replace" : "Upload"} onPress={() => uploadAsset("id")} disabled={Boolean(uploading)} variant="outline" /></View>
     </Section>
 
-    <View style={styles.submitBar}><View style={styles.submitCopy}><Text style={styles.submitTitle}>Ready for review?</Text><Text style={styles.hint}>You can update your details later from Profile. Set a separate price for each pooja in Profile → Pooja rate card.</Text></View><Button testID="save-profile-btn" title={saving || loading ? "Saving..." : "Submit for verification"} onPress={save} disabled={saving || loading} /></View>
+    <View style={styles.submitBar}><View style={styles.submitCopy}><Text style={styles.submitTitle}>Ready for review?</Text><Text style={styles.hint}>Submitting opens your dashboard while verification is pending. You can add your ID document and edit details later from Profile.</Text></View><Button testID="save-profile-btn" title={saving || loading ? "Saving..." : "Submit for verification"} onPress={save} disabled={saving || loading} /></View>
   </ScrollView>;
 }
 

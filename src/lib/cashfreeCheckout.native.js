@@ -45,4 +45,3 @@ export async function openCashfreeCheckout(order) {
     CFPaymentGatewayService.doWebPayment(session);
   });
 }
-

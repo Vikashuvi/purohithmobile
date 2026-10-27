@@ -31,6 +31,7 @@ export default function Home({ navigation }) {
   const { area } = usePreferences();
   const { tokens } = useAppearance();
   const [poojas, setPoojas] = useState([]);
+  const [biddingEnabled, setBiddingEnabled] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All");
@@ -38,6 +39,7 @@ export default function Home({ navigation }) {
   const load = async () => {
     try {
       const data = await fetchMarketplacePoojas();
+      setBiddingEnabled(data.bidding_enabled === true);
       const serverPoojas = (data.poojas || []).map((item) => ({
         ...item,
         duration_hours: Math.max(1, Math.round((item.duration_minutes || 120) / 60)),
@@ -82,7 +84,7 @@ export default function Home({ navigation }) {
             <View>
               <Text style={[styles.eyebrow, { color: tokens.accent }]}>SERVING {area.name.toUpperCase()}</Text>
               <Text style={styles.heading}>A ceremony, handled well.</Text>
-              <Text style={styles.headingSub}>Discover verified Purohits or invite proposals with one clear request.</Text>
+              <Text style={styles.headingSub}>Find verified Purohits by ceremony, area, and published price.</Text>
             </View>
             <Pressable accessibilityLabel="Filters" style={({ pressed }) => [styles.iconButton, pressed && styles.controlPressed]}><SlidersHorizontal size={20} color={colors.ink} /></Pressable>
           </View>
@@ -145,7 +147,7 @@ export default function Home({ navigation }) {
                   <Text style={styles.cardActionSecondaryText}>View Purohits</Text>
                 </Pressable>
 
-                <Pressable
+                {biddingEnabled && <Pressable
                   testID={`request-proposals-${item.slug}`}
                   onPress={(event) => {
                     event.stopPropagation?.();
@@ -157,17 +159,17 @@ export default function Home({ navigation }) {
                   <FileText size={14} color={tokens.primaryFg} />
                   <Text style={[styles.cardActionPrimaryText, { color: tokens.primaryFg }]}>Get Proposals</Text>
                   <ArrowRight size={13} color={tokens.primaryFg} />
-                </Pressable>
+                </Pressable>}
               </View>
             </Pressable>
           );
         }}
         ListFooterComponent={<View>
-          <Pressable style={({ pressed }) => [styles.hero, desktop && styles.heroDesktop, pressed && styles.panelPressed]} onPress={() => navigation.navigate("RequestPooja")}>
+          {biddingEnabled && <Pressable style={({ pressed }) => [styles.hero, desktop && styles.heroDesktop, pressed && styles.panelPressed]} onPress={() => navigation.navigate("RequestPooja")}>
             <ImageBackground source={require("../../../assets/images/ceremony-proposal-editorial-v3.png")} style={styles.heroArtwork} imageStyle={styles.heroArtworkImage}>
               <View style={styles.heroShade} /><View style={[styles.heroCopy, desktop && styles.heroCopyDesktop]}><Text style={[styles.heroTagText, { color: tokens.accent }]}>REQUEST PROPOSALS</Text><Text style={[styles.heroTitle, desktop && styles.heroTitleDesktop]}>Invite the right purohit to your ceremony.</Text><Text style={[styles.heroBody, desktop && styles.heroBodyDesktop]}>Share the details, compare verified offers, and choose comfortably.</Text><View style={[styles.heroAction, { borderRadius: tokens.radius, backgroundColor: tokens.primaryBg, borderWidth: 1, borderColor: tokens.primaryBorder }]}><Text style={[styles.heroActionText, { color: tokens.primaryFg }]}>Start a request</Text><ArrowRight size={17} color={tokens.primaryFg} /></View></View>
             </ImageBackground>
-          </Pressable>
+          </Pressable>}
           <View style={styles.serviceLinks}>
             <Pressable style={({ pressed }) => [styles.serviceLink, pressed && styles.controlPressed]} onPress={() => navigation.navigate("Chat")}><View style={styles.aiMark}><Text style={[styles.om, { color: tokens.accent }]}>ॐ</Text></View><View style={{ flex: 1 }}><Text style={[styles.aiEyebrow, { color: tokens.accent }]}>PUROMITRA</Text><Text style={styles.aiTitle}>Ask your pooja assistant</Text><Text style={styles.aiBody}>Get guidance on rituals and samagri.</Text></View><ArrowRight size={18} color={colors.ink} /></Pressable>
             <Pressable style={({ pressed }) => [styles.serviceLink, pressed && styles.controlPressed]} onPress={() => navigation.navigate("RolePicker")}><View style={styles.priestInviteIcon}><UserRoundPlus size={18} color={colors.ink} /></View><View style={{ flex: 1 }}><Text style={[styles.aiEyebrow, { color: tokens.accent }]}>FOR PUROHITS</Text><Text style={styles.aiTitle}>Grow your practice</Text><Text style={styles.aiBody}>Receive local ceremony requests.</Text></View><ArrowRight size={18} color={colors.ink} /></Pressable>

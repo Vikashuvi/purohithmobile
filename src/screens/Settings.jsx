@@ -7,6 +7,7 @@ import { colors, font } from "../lib/theme";
 import { usePreferences } from "../lib/preferences";
 import { APPEARANCE_PRESETS, BUTTON_SHAPES, BUTTON_STYLES, COLOR_SWATCHES, useAppearance } from "../lib/appearance";
 import { registerForPush, unregisterPush } from "../lib/notifications";
+import { registerWebPush, unregisterWebPush } from "../lib/webPush";
 import { useAuth } from "../lib/auth";
 import { supabase } from "../lib/supabase";
 
@@ -49,13 +50,23 @@ function LocationSettings() {
 
 function NotificationSettings() {
   const { notificationsEnabled, setNotificationsEnabled } = usePreferences();
+  const { user } = useAuth();
   const [busy, setBusy] = useState(false);
   const update = async (next) => {
     setBusy(true);
     try {
       if (next) {
-        const { status } = await registerForPush();
-        if (Platform.OS !== "web" && status !== "registered") throw new Error("Notification permission was not granted");
+        if (Platform.OS === "web") {
+          const { status } = await registerWebPush(user?.id);
+          if (status === "denied") throw new Error("Notifications are blocked in this browser. Allow them in the site settings, then try again.");
+          if (status === "unsupported") throw new Error("This browser cannot show push notifications.");
+          if (status !== "registered") throw new Error("Could not enable browser notifications");
+        } else {
+          const { status } = await registerForPush();
+          if (status !== "registered") throw new Error("Notification permission was not granted");
+        }
+      } else if (Platform.OS === "web") {
+        await unregisterWebPush();
       } else {
         await unregisterPush();
       }
@@ -128,7 +139,7 @@ function AppearanceSettings() {
   const { appearance, tokens, customized, setAppearance, resetAppearance } = useAppearance();
   const preset = APPEARANCE_PRESETS.find((item) => item.id === appearance.preset);
   return <>
-    <Text style={styles.lede}>This palette colors buttons, banners, chips, and highlights on your phone. It stays on this device and does not change anyone else's app.</Text>
+    <Text style={styles.lede}>This palette colors buttons, banners, chips, and highlights on your phone. It stays on this device and does not change anyone else&apos;s app.</Text>
     <View style={styles.previewCard}>
       <Text style={[styles.previewEyebrow, { color: tokens.accent }]}>CEREMONY</Text>
       <Text style={styles.previewTitle}>Ayudha Puja</Text>

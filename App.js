@@ -80,9 +80,12 @@ function navigationTheme(accent) {
 
 // Deep-link config: purohith://booking/<id>, purohith://priests
 const linking = {
-  prefixes: [Linking2.createURL("/"), "purohith://", "https://purohithconnect.com"],
+  prefixes: [Linking2.createURL("/"), "purohith://", "https://bookingg.purohithconnect.com", "https://purohithconnect.com"],
   config: {
     screens: {
+      RolePicker: "",
+      Login: "login",
+      PriestOnboarding: "priest/onboarding",
       Tabs: {
         screens: {
           Home: "home",
@@ -105,6 +108,7 @@ const linking = {
           requestId: String,
         },
       },
+      Notifications: "notifications",
     },
   },
 };
@@ -231,6 +235,7 @@ function Router() {
       }}
     >
       <RootStack.Navigator
+        key={user ? `app:${user.role}` : role ? `login:${role}` : "role-picker"}
         screenOptions={({ navigation }) => ({
           headerShown: false,
           contentStyle: { backgroundColor: colors.cotton },
@@ -276,10 +281,7 @@ function Router() {
             <RootStack.Screen name="Notifications" component={Notifications} options={{ headerShown: true, title: "Notifications" }} />
           </>
         )}
-        {user && user.role === "priest" && user.onboardingRequired && (
-          <RootStack.Screen name="PriestOnboarding" component={PriestOnboarding} />
-        )}
-        {user && user.role === "priest" && !user.onboardingRequired && (
+        {user && user.role === "priest" && (
           <>
             <RootStack.Screen name="Tabs" component={PriestTabs} />
             <RootStack.Screen name="PriestOnboarding" component={PriestOnboarding} options={{ headerShown: true, title: "Profile" }} />

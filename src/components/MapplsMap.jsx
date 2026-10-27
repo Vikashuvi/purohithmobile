@@ -185,6 +185,13 @@ function generateMapplsHtml({ latitude, longitude, title, address, token, pickab
 
 const sameSpot = (a, b) => a && b && Math.abs(a.latitude - b.latitude) < 1e-6 && Math.abs(a.longitude - b.longitude) < 1e-6;
 
+// Custom schemes such as intent: and mappls: hand the screen off to another app.
+function allowEmbeddedLoad(request) {
+  const url = String(request?.url || "");
+  if (!url || url.startsWith("about:") || url.startsWith("data:") || url.startsWith("blob:") || url.startsWith("file:")) return true;
+  return url.startsWith("https://") || url.startsWith("http://");
+}
+
 export default function MapplsMap({ latitude, longitude, title, address, style, onPick }) {
   const hasValidCoords = isValidCoordinate(latitude, longitude);
   const effectiveLat = hasValidCoords ? Number(latitude) : DEFAULT_LAT;
@@ -195,6 +202,19 @@ export default function MapplsMap({ latitude, longitude, title, address, style, 
   const lastPicked = useRef(null);
   const onPickRef = useRef(onPick);
   onPickRef.current = onPick;
+  const [nativeReady, setNativeReady] = useState(Platform.OS === "web");
+
+  useEffect(() => {
+    if (Platform.OS === "web") return undefined;
+    let active = true;
+    const timer = setTimeout(() => {
+      if (active) setNativeReady(true);
+    }, 420);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, []);
 
   // A pin moved inside the map must not rebuild the map; only external location changes re-centre it.
   const [center, setCenter] = useState({ latitude: effectiveLat, longitude: effectiveLng });
@@ -244,16 +264,24 @@ export default function MapplsMap({ latitude, longitude, title, address, style, 
   }
 
   return (
-    <WebView
-      source={{ html, baseUrl: WEBVIEW_BASE_URL }}
-      style={[styles.map, style]}
-      originWhitelist={["*"]}
-      javaScriptEnabled
-      domStorageEnabled
-      nestedScrollEnabled
-      scrollEnabled={false}
-      onMessage={(event) => handleMessage(event.nativeEvent.data)}
-    />
+    <View collapsable={false} needsOffscreenAlphaCompositing={Platform.OS === "android"} style={[styles.map, style, Platform.OS === "android" && styles.mapAndroid]}>
+      {nativeReady ? (
+        <WebView
+          source={{ html, baseUrl: WEBVIEW_BASE_URL }}
+          style={styles.webview}
+          originWhitelist={["*"]}
+          javaScriptEnabled
+          domStorageEnabled
+          nestedScrollEnabled
+          scrollEnabled={false}
+          overScrollMode="never"
+          setSupportMultipleWindows={false}
+          androidLayerType="software"
+          onShouldStartLoadWithRequest={allowEmbeddedLoad}
+          onMessage={(event) => handleMessage(event.nativeEvent.data)}
+        />
+      ) : null}
+    </View>
   );
 }
 
@@ -263,5 +291,14 @@ const styles = bindBrandStyles({
     minHeight: 320,
     overflow: "hidden",
     backgroundColor: "#F8F5EF",
+  },
+  mapAndroid: { opacity: 0.99 },
+  webview: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: "transparent",
   },
 });

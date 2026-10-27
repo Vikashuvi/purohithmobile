@@ -287,6 +287,10 @@ export function renderBookingInvoice({ invoiceNumber, booking, amountInr, paymen
 }) {
   const ceremony = clean(booking?.pooja_name) || "Ceremony booking";
   const priest = clean(booking?.priest_name);
+  const basePrice = Number(booking?.pooja_price_inr || 0);
+  const platformFee = Number(booking?.service_fee_inr || 0);
+  const addOns = Number(booking?.addons_total_inr || 0);
+  const separateFee = basePrice > 0 && platformFee > 0 && Math.abs(basePrice + addOns + platformFee - amountInr) < 0.01;
   return renderTaxInvoice({
     invoiceNumber,
     issuedAt: issuedAt || booking?.invoice_issued_at || undefined,
@@ -309,8 +313,8 @@ export function renderBookingInvoice({ invoiceNumber, booking, amountInr, paymen
       sac: DEFAULT_SAC,
       quantity: 1,
       unit: "Service",
-      amountInr,
-    }],
+      amountInr: separateFee ? basePrice : amountInr,
+    }, ...(separateFee && addOns > 0 ? [{ description: "Additional services", detail: [booking?.pricing_options?.additional_priest ? "Additional purohit" : "", booking?.pricing_options?.extra_service_label || ""].filter(Boolean).join(" + "), sac: DEFAULT_SAC, quantity: 1, unit: "Service", amountInr: addOns }] : []), ...(separateFee ? [{ description: "Platform fee", detail: "Booking service charge", sac: DEFAULT_SAC, quantity: 1, unit: "Service", amountInr: platformFee }] : [])],
   });
 }
 

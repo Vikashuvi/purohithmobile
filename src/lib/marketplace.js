@@ -32,7 +32,7 @@ export async function fetchMyRateCard(userId) {
   if (profileError) throw profileError;
   if (!profile) return { profile: null, services: [] };
   const { data: services, error } = await supabase.from("priest_services")
-    .select("pooja_slug,price_paise,duration_minutes,includes_samagri,description,is_active")
+    .select("pooja_slug,price_paise,with_samagri_price_paise,additional_priest_price_paise,extra_service_label,extra_service_price_paise,duration_minutes,includes_samagri,description,is_active")
     .eq("priest_id", profile.id);
   if (error) throw error;
   return { profile, services: services || [] };

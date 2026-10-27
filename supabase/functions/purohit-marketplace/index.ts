@@ -17,7 +17,7 @@ Deno.serve(async (req) => {
     });
 
     if (body.kind === "poojas") {
-      const [{ data, error }, { data: feeSetting }] = await Promise.all([
+      const [{ data, error }, { data: feeSetting }, { data: biddingSetting }] = await Promise.all([
         supabase.from("poojas")
           .select("id,slug,name,description,duration_minutes,base_price_inr,image_url,is_active")
           .eq("is_active", true)
@@ -26,18 +26,19 @@ Deno.serve(async (req) => {
           .select("value")
           .eq("key", "payment_service_fee_percent")
           .maybeSingle(),
+        supabase.from("platform_settings").select("value").eq("key", "booking_bidding_enabled").maybeSingle(),
       ]);
       if (error) throw error;
       const serviceFeePercent = Number(feeSetting?.value || 10);
-      return json({ poojas: data || [], service_fee_percent: serviceFeePercent });
+      return json({ poojas: data || [], service_fee_percent: serviceFeePercent, bidding_enabled: biddingSetting?.value === "true" });
     }
 
     if (body.kind === "settings") {
-      const { data: feeSetting } = await supabase.from("platform_settings")
-        .select("value")
-        .eq("key", "payment_service_fee_percent")
-        .maybeSingle();
-      return json({ service_fee_percent: Number(feeSetting?.value || 10) });
+      const [{ data: feeSetting }, { data: biddingSetting }] = await Promise.all([
+        supabase.from("platform_settings").select("value").eq("key", "payment_service_fee_percent").maybeSingle(),
+        supabase.from("platform_settings").select("value").eq("key", "booking_bidding_enabled").maybeSingle(),
+      ]);
+      return json({ service_fee_percent: Number(feeSetting?.value || 10), bidding_enabled: biddingSetting?.value === "true" });
     }
 
     if (body.kind === "profile") {
@@ -54,7 +55,7 @@ Deno.serve(async (req) => {
       if (error) throw error;
       if (!data) return json({ error: "Profile not found" }, 404);
       const { data: services, error: servicesError } = await supabase.from("priest_services")
-        .select("pooja_slug,price_paise,duration_minutes,includes_samagri,description,is_active")
+        .select("pooja_slug,price_paise,with_samagri_price_paise,additional_priest_price_paise,extra_service_label,extra_service_price_paise,duration_minutes,includes_samagri,description,is_active")
         .eq("priest_id", data.id)
         .eq("is_active", true)
         .order("price_paise", { ascending: true });
@@ -71,6 +72,10 @@ Deno.serve(async (req) => {
           services: (services || []).map((service: any) => ({
             pooja_slug: service.pooja_slug,
             price_inr: Number(service.price_paise || 0) / 100,
+            with_samagri_price_inr: service.with_samagri_price_paise == null ? null : Number(service.with_samagri_price_paise) / 100,
+            additional_priest_price_inr: service.additional_priest_price_paise == null ? null : Number(service.additional_priest_price_paise) / 100,
+            extra_service_label: service.extra_service_label || "",
+            extra_service_price_inr: service.extra_service_price_paise == null ? null : Number(service.extra_service_price_paise) / 100,
             duration_minutes: service.duration_minutes,
             includes_samagri: Boolean(service.includes_samagri),
             description: service.description || "",
@@ -142,6 +147,8 @@ function clean(value: unknown) {
 }
 
 function mapPriest(profile: any) {
+  let availability: any = {};
+  try { availability = JSON.parse(profile.availability_notes || "{}"); } catch { /* legacy free-text notes */ }
   return {
     id: profile.id,
     slug: profile.slug,
@@ -165,6 +172,8 @@ function mapPriest(profile: any) {
     rating_count: profile.review_count || 0,
     tradition: profile.tradition,
     availability_notes: profile.availability_notes,
+    blocked_dates: Array.isArray(availability.blocked) ? availability.blocked : [],
+    availability_slots: availability.slots && typeof availability.slots === "object" ? availability.slots : {},
     starting_price_inr: profile.starting_price_inr,
     max_price_inr: profile.max_price_inr,
     primary_service_area: profile.primary_service_area,

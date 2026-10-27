@@ -156,7 +156,7 @@ export default function LocationPicker({ coords, onCoordsChange, address, onAddr
         <Text style={styles.locationButtonText}>{locating ? "Reading location..." : "Use current location"}</Text>
       </Pressable>
 
-      <View style={styles.mapWrap}>
+      <View style={styles.mapWrap} collapsable={false}>
         <MapplsMap latitude={coords?.latitude} longitude={coords?.longitude} title={title} style={styles.map} onPick={onMapPick} />
       </View>
       <View style={[styles.pinStatus, hasPin && styles.pinStatusSet]}>

@@ -1,15 +1,16 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { bindBrandStyles } from "../../lib/brandStyles";
-import { View, Text, FlatList, RefreshControl, Modal, Pressable, TextInput, ScrollView, Alert, Image } from "react-native";
+import { View, Text, FlatList, RefreshControl, Modal, Pressable, TextInput, ScrollView, Alert, Image, Platform } from "react-native";
 import { CalendarDays, CheckCircle2, ChevronRight, Clock3, LocateFixed, MapPin, MessageSquareText, Phone, Sparkles, ArrowRight, Plus, X } from "lucide-react-native";
 import { colors, radii, spacing, font } from "../../lib/theme";
 import { Button, Field } from "../../components/UI";
 import { EmptyState, StatusBadge } from "../../components/ProductUI";
 import api from "../../lib/api";
-import { downloadInvoice, listBookings, listCustomerRequests, listPaymentReports, payForBooking, showAppAlert } from "../../lib/payments";
+import { downloadInvoice, listBookings, listCustomerRequests, listPaymentReports, payForBooking, showAppAlert, verifyCashfreeOrder } from "../../lib/payments";
 import { useI18n } from "../../lib/i18n";
 import { useAuth } from "../../lib/auth";
 import { startInAppCall } from "../../lib/calls";
+import { fetchMarketplaceSettings } from "../../lib/marketplace";
 
 const TIME_SLOTS = ["06:00", "07:30", "09:00", "10:30", "16:00", "17:30", "19:00"];
 const DISPUTE_CATEGORIES = [
@@ -49,6 +50,7 @@ export default function MyBookings({ navigation }) {
   const { t, language } = useI18n();
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("bookings"); // "bookings" | "proposals"
+  const [biddingEnabled, setBiddingEnabled] = useState(false);
   const [items, setItems] = useState([]);
   const [requests, setRequests] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -89,6 +91,19 @@ export default function MyBookings({ navigation }) {
   }, [user?.demo]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { fetchMarketplaceSettings().then((settings) => setBiddingEnabled(settings.bidding_enabled === true)).catch(() => setBiddingEnabled(false)); }, []);
+  useEffect(() => {
+    if (Platform.OS !== "web" || !user?.id || typeof window === "undefined" || !window.location) return;
+    const orderId = new URLSearchParams(window.location.search).get("order_id");
+    if (!orderId || !/^PC_[a-f0-9]{28}$/i.test(orderId)) return;
+    verifyCashfreeOrder({ order_id: orderId })
+      .then(({ order }) => showAppAlert(order?.status === "paid" ? "Payment confirmed" : "Payment status", order?.status === "paid" ? "Your booking is confirmed and the invoice is ready." : "Payment is still being confirmed. Pull down to refresh shortly."))
+      .catch((error) => showAppAlert("Payment verification", error?.message || "Could not verify payment yet."))
+      .finally(() => {
+        window.history?.replaceState?.({}, "", window.location.pathname);
+        load();
+      });
+  }, [user?.id, load]);
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
   const openCancel = async (b) => {
@@ -169,9 +184,9 @@ export default function MyBookings({ navigation }) {
         ListHeaderComponent={
           <View style={styles.header}>
             <View style={styles.headerCopy}>
-              <Text style={styles.headerKicker}>CEREMONIES & PROPOSALS</Text>
+              <Text style={styles.headerKicker}>YOUR CEREMONIES</Text>
               <Text style={styles.h1}>{t.tabBookings}</Text>
-              <Text style={styles.sub}>Track confirmed priest bookings or review incoming purohit proposals.</Text>
+              <Text style={styles.sub}>Track requests, payments, and ceremony progress in one place.</Text>
             </View>
 
             {/* Segmented Switcher */}
@@ -186,7 +201,7 @@ export default function MyBookings({ navigation }) {
                 </Text>
               </Pressable>
 
-              <Pressable
+              {(biddingEnabled || requests.length > 0) && <Pressable
                 onPress={() => setActiveTab("proposals")}
                 style={[styles.segmentBtn, activeTab === "proposals" && styles.segmentBtnActive]}
               >
@@ -194,10 +209,10 @@ export default function MyBookings({ navigation }) {
                 <Text style={[styles.segmentText, activeTab === "proposals" && styles.segmentTextActive]}>
                   Proposals ({requests.length})
                 </Text>
-              </Pressable>
+              </Pressable>}
             </View>
 
-            {activeTab === "proposals" && (
+            {activeTab === "proposals" && biddingEnabled && (
               <Pressable
                 onPress={() => navigation.navigate("RequestPooja")}
                 style={styles.newRequestBtn}
@@ -252,7 +267,7 @@ export default function MyBookings({ navigation }) {
                     </Text>
                   </View>
                   <StatusBadge
-                    label={req.status === "open" ? (hasProposals ? `${req.proposal_count} PROPOSALS` : "OPEN") : req.status.toUpperCase()}
+                    label={req.status === "open" ? (hasProposals ? `${req.proposal_count} PROPOSALS` : "OPEN") : String(req.status || "open").toUpperCase()}
                     tone={hasProposals ? "accent" : req.status === "awarded" ? "success" : "neutral"}
                   />
                 </View>
@@ -287,7 +302,7 @@ export default function MyBookings({ navigation }) {
           }
 
           const b = item;
-          const total = b.total_amount || b.price;
+          const total = Number(b.total_amount || b.price || 0);
           const canReschedule = ["pending", "confirmed"].includes(b.status);
           const canCancel = ["pending", "confirmed"].includes(b.status);
           const awaitingPayment = b.status === "accepted" && b.payment_status !== "paid";
@@ -303,7 +318,7 @@ export default function MyBookings({ navigation }) {
               <View style={styles.detailRow}><CalendarDays size={15} color={colors.ink} /><Text style={styles.detailText}>{b.booking_date} · {b.booking_time}</Text></View>
               <View style={styles.detailRow}><MapPin size={15} color={colors.ink} /><Text style={styles.detailText} numberOfLines={1}>{b.address}</Text></View>
               {(b.add_ons || []).length > 0 && (
-                <Text style={styles.metaSmall}>+ {(b.add_ons || []).map(a => `${a.name.split("·")[1]?.trim() || a.name} × ${a.qty}`).join(", ")}</Text>
+                <Text style={styles.metaSmall}>+ {(b.add_ons || []).map((addon) => { const name = String(addon?.name || "Add-on"); return `${name.split("·")[1]?.trim() || name} × ${addon?.qty || 1}`; }).join(", ")}</Text>
               )}
               {b.reschedule_count > 0 && <Text style={[styles.metaSmall, { color: colors.info }]}>Rescheduled {b.reschedule_count}×</Text>}
               <View style={styles.priceRow}>
